@@ -25,6 +25,7 @@ so nPt = 16 * 33554432 = 536870912
 #define SCOPE_NCH 16
 #define SCOPE_MEM_LENGTH_MAX 33554432 // GiB memory, (16-bit x 1-ch) per point
 // #define SCOPE_MEM_LENGTH_MAX 16777216 // 256MiB memory, (16-bit X 8-ch) per point
+#define ANALYSIS_WAVEFORM_BASE_TYPE double
 #define SCOPE_DATA_TYPE_INT int16_t
 #define SCOPE_DATA_TYPE_FLOAT float
 #define SCOPE_DATA_HDF5_TYPE_INT H5T_NATIVE_INT16
