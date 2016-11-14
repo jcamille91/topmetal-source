@@ -34,6 +34,16 @@ def trapfilter(pulse, n_avg, n_gap):
       out[i] = (avg2 - avg1)/(n_avg)
    return out
 
+def shaper(pulse, l, k, M)
+   out = np.zeros(len(pulse))
+   for i in np.arange(len(pulse)
+
+      j = i; jkjk = j-k; jl = j-l; jkl = j-k-l;
+
+      (vj = pulse[j]) if j >= 0 else (vj = pulse[0]);
+      (vjk = pulse[jk]) if jk >= 0 else (vjk = pulse[0]);
+      (vjl = pulse[jl]) if jl >= 0 else (vjl = pulse[0]);
+      (vjkl = pulse[jkl]) if jkl >= 0 else (vjkl = pulse[0]);
 def trigger(Y, threshold):
 
    # image derivative

@@ -14,11 +14,17 @@ typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
 
 // argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
 
-void shaper(char *inFileName, char *outFileName, size_t wavLen, size_t k, size_t l, double M)
-
+void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 {
+
+    /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
+     * rise time, l is the delay of peak, l-k is the flat-top duration, M
+     * is the decay time constant (in number of samples) of the input
+     * pulse.  Set M=-1.0 to deal with a step-like input function.
+     */
     
     double s, pp;
+    size_t idx1;
     ssize_t i, j, jk, jl, jkl;
     double vj, vjk, vjl, vjkl, dkl;
     s = 0.0; pp = 0.0;  
@@ -54,44 +60,25 @@ void shaper(char *inFileName, char *outFileName, size_t wavLen, size_t k, size_t
     nEventsInFile = hdf5io_get_number_of_events(inWfmFile);
     fprintf(stderr, "Number of events in file: %zd\n", nEventsInFile);
     
-    // this is just some logic for handling the frameSize, which we don't currently need.
-    // just input the frameSize even if it is redundant with respect to the other inputs.
-
     /*
-    if(inWfmAttr.nFrames > 0) {
-        frameSize = inWfmAttr.nPt / (double)inWfmAttr.nFrames;
-    } else {
-        frameSize = (double)inWfmAttr.nPt;
-    }
-
      v = inWfmAttr.chMask;
      for(c=0; v; c++) v &= v - 1; // Brian Kernighan's way of counting bits
      chGrpLen = inWfmFile->nCh / c;
      i=0;
      for(v=0; v<SCOPE_NCH; v++)
          if((inWfmAttr.chMask >> v) & 0x01) { chGrpIdx[i] = v; i++; }
-    
-    wfmOff = 0;
-    //if we define framesize, do this
-    if(frameSize > 0) {
-        frameSize = frameSize;
     */
-    inWfmAttr.nFrames = (size_t)((inWfmAttr.nPt - mStart) / frameSize);
-    wfmOff = mStart;
-    mStart = 0;
-    //}    
+  
 
-    fprintf(stderr, "mStart: %zu\n", mStart);
-    fprintf(stderr, "mChLen: %f\n", mChLen);
-    fprintf(stderr, "mNCh: %zu\n", mNCh);
-    fprintf(stderr, "mChOff: %zu\n", mChOff);
-    fprintf(stderr, "mChSpl: %zu\n", mChSpl);
-    fprintf(stderr, "frameSize: %f\n", frameSize);
+    fprintf(stderr, "k: %zu\n", k);
+    fprintf(stderr, "l: %zu\n", l);
+    fprintf(stderr, "M: %zu\n", M);
+
 
     /* output */
     outWfmFile = hdf5io_open_file(outFileName, inWfmFile->nWfmPerChunk, mNCh * inWfmFile->nCh);
     memcpy(&outWfmAttr, &inWfmAttr, sizeof(inWfmAttr));
-    outWfmAttr.nPt = MAX(inWfmAttr.nFrames, 1);
+    outWfmAttr.nPt = inWfmAttr.nPt;
     outWfmAttr.nFrames = 0;
     hdf5io_write_waveform_attribute_in_file_header(outWfmFile, &outWfmAttr);
 
@@ -100,30 +87,29 @@ void shaper(char *inFileName, char *outFileName, size_t wavLen, size_t k, size_t
     outWfmBuf = (OUT_WFM_BASE_TYPE*)malloc(outWfmFile->nPt * outWfmFile->nCh * sizeof(OUT_WFM_BASE_TYPE));
     outWfmEvent.wavBuf = outWfmBuf;
     
-   
-
+   // number of points needs to be restricted so we don't go out of bounds... how does this recursive 
+   // index??
+    waveLen = inWfmAttr.nPt - (l - k) - M
 
     for(inWfmEvent.eventId = 0; inWfmEvent.eventId < 1; inWfmEvent.eventId++) {
         hdf5io_read_event_int(inWfmFile, &inWfmEvent);
         for(iCh=0; iCh < inWfmFile->nCh; iCh++) {
-        
-        // put iCh in the indices the same way we do it for the demux, so we can extend this to multiple
-        // channels.
+            idx1 = iCh * inWfmFile->nPt;
+            // put iCh in the indices the same way we do it for the demux, so we can extend this to multiple
+            // channels.
 
             // size_t wavLen, size_t k, size_t l, double M
             // double s, pp;
             // ssize_t i, j, jk, jl, jkl;
             // double vj, vjk, vjl, vjkl, dkl;
-
             // s = 0.0; pp = 0.0;
-    
             for(i=0; i<wavLen; i++) {
                 j=i; jk = j-k; jl = j-l; jkl = j-k-l;
-                // "condition ? x : y" is a compact if-else statment
-                vj   = j >= 0   ? inWfmBuf[j]   : inWfmBuf[0];
-                vjk  = jk >= 0  ? inWfmBuf[jk]  : inWfmBuf[0];
-                vjl  = jl >= 0  ? inWfmBuf[jl]  : inWfmBuf[0];
-                vjkl = jkl >= 0 ? inWfmBuf[jkl] : inWfmBuf[0];
+                // "condition ? x : y" is a compact if-else statment, "ternary operator"
+                vj   = (j   >= 0) ? inWfmBuf[idx1 + j]   : inWfmBuf[idx1];
+                vjk  = (jk  >= 0) ? inWfmBuf[idx1 + jk]  : inWfmBuf[idx1];
+                vjl  = (jl  >= 0) ? inWfmBuf[idx1 + jl]  : inWfmBuf[idx1];
+                vjkl = (jkl >= 0) ? inWfmBuf[idx1 + jkl] : inWfmBuf[idx1];
 
                 dkl = vj - vjk - vjl + vjkl;
                 pp = pp + dkl;
@@ -136,7 +122,7 @@ void shaper(char *inFileName, char *outFileName, size_t wavLen, size_t k, size_t
                     s = s + dkl;
                 }
                 
-                outWfmBuf[i] = s / (fabs(M) * (double)k);
+                outWfmBuf[idx1 + i] = s / (fabs(M) * (double)k);
 
  
         }
