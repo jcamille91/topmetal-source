@@ -21,7 +21,7 @@ void demux(char *inFileName, char *outFileName, size_t mStart, double mChLen, si
     size_t wfmOff, nEventsInFile;
     // size_t mStart, mNCh, mChOff, mChSpl; //chGrpLen;
     // double frameSize, mChLen;
-    double avg = 0, sigma = 0, val = 0;
+    double avg = 0, /*sigma = 0,*/ val = 0;
     //unsigned int v, c;
     //size_t chGrpIdx[SCOPE_NCH] = {0};
     //char *inFileName, *outFileName;

@@ -44,6 +44,16 @@ def shaper(pulse, l, k, M)
       (vjk = pulse[jk]) if jk >= 0 else (vjk = pulse[0]);
       (vjl = pulse[jl]) if jl >= 0 else (vjl = pulse[0]);
       (vjkl = pulse[jkl]) if jkl >= 0 else (vjkl = pulse[0]);
+
+      dkl = vj - vjk - vjl + vjkl;
+      pp = pp + dkl;
+
+      if (M >= 0.0) 
+         s = s + pp + (dkl*M);
+      else
+         s = s + dkl;
+
+      out[i] = s/(fabs(M)
 def trigger(Y, threshold):
 
    # image derivative

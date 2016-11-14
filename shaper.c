@@ -9,7 +9,7 @@
 #include "common.h"
 #include "hdf5rawWaveformIo.h"
 
-typedef SCOPE_DATA_TYPE_INT IN_WFM_BASE_TYPE;
+typedef SCOPE_DATA_TYPE_FLOAT IN_WFM_BASE_TYPE;
 typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
 
 // argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
@@ -22,17 +22,16 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
      * is the decay time constant (in number of samples) of the input
      * pulse.  Set M=-1.0 to deal with a step-like input function.
      */
+    size_t nEventsInFile;
+    //size_t idx1; if this isn't signed, indices might do werid things. even though it should never be negative.
+    ssize_t iCh, i, j, jk, jl, jkl, idx1;
+    double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     
-    double s, pp;
-    size_t idx1;
-    ssize_t i, j, jk, jl, jkl;
-    double vj, vjk, vjl, vjkl, dkl;
-    s = 0.0; pp = 0.0;  
 
 
     struct hdf5io_waveform_file *inWfmFile, *outWfmFile;
     struct waveform_attribute inWfmAttr, outWfmAttr;
-    struct hdf5io_waveform_event_int inWfmEvent;
+    struct hdf5io_waveform_event_float inWfmEvent;
     struct hdf5io_waveform_event_float outWfmEvent;
     IN_WFM_BASE_TYPE *inWfmBuf;
     OUT_WFM_BASE_TYPE *outWfmBuf;
@@ -72,11 +71,11 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 
     fprintf(stderr, "k: %zu\n", k);
     fprintf(stderr, "l: %zu\n", l);
-    fprintf(stderr, "M: %zu\n", M);
+    fprintf(stderr, "M: %f\n", M);
 
 
     /* output */
-    outWfmFile = hdf5io_open_file(outFileName, inWfmFile->nWfmPerChunk, mNCh * inWfmFile->nCh);
+    outWfmFile = hdf5io_open_file(outFileName, inWfmFile->nWfmPerChunk, inWfmFile->nCh);
     memcpy(&outWfmAttr, &inWfmAttr, sizeof(inWfmAttr));
     outWfmAttr.nPt = inWfmAttr.nPt;
     outWfmAttr.nFrames = 0;
@@ -87,23 +86,21 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
     outWfmBuf = (OUT_WFM_BASE_TYPE*)malloc(outWfmFile->nPt * outWfmFile->nCh * sizeof(OUT_WFM_BASE_TYPE));
     outWfmEvent.wavBuf = outWfmBuf;
     
-   // number of points needs to be restricted so we don't go out of bounds... how does this recursive 
-   // index??
-    waveLen = inWfmAttr.nPt - (l - k) - M
-
+    /* this loop works for multiple sensors, the pixels repeat from 0->5184 for each
+       individual sensor. e.g. nCh is (nSensor*5184) */
     for(inWfmEvent.eventId = 0; inWfmEvent.eventId < 1; inWfmEvent.eventId++) {
-        hdf5io_read_event_int(inWfmFile, &inWfmEvent);
+        hdf5io_read_event_float(inWfmFile, &inWfmEvent);
         for(iCh=0; iCh < inWfmFile->nCh; iCh++) {
-            idx1 = iCh * inWfmFile->nPt;
-            // put iCh in the indices the same way we do it for the demux, so we can extend this to multiple
-            // channels.
+            idx1 = iCh*inWfmFile->nPt;
+            s = 0.0; pp = 0.0; /* reset these each pixel, because
+             the algorithm is recursive. */
 
-            // size_t wavLen, size_t k, size_t l, double M
+            // size_t k, size_t l, double M
             // double s, pp;
             // ssize_t i, j, jk, jl, jkl;
             // double vj, vjk, vjl, vjkl, dkl;
             // s = 0.0; pp = 0.0;
-            for(i=0; i<wavLen; i++) {
+            for(i = 0; i < inWfmAttr.nPt; i++) {
                 j=i; jk = j-k; jl = j-l; jkl = j-k-l;
                 // "condition ? x : y" is a compact if-else statment, "ternary operator"
                 vj   = (j   >= 0) ? inWfmBuf[idx1 + j]   : inWfmBuf[idx1];
@@ -114,7 +111,7 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
                 dkl = vj - vjk - vjl + vjkl;
                 pp = pp + dkl;
 
-                if(M>=0.0) {
+                if(M >= 0.0) {
                     s = s + pp + dkl * M;
                 }
                 
@@ -123,20 +120,17 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
                 }
                 
                 outWfmBuf[idx1 + i] = s / (fabs(M) * (double)k);
-
- 
-        }
-        
-        outWfmEvent.eventId = inWfmEvent.eventId;
-        hdf5io_write_event(outWfmFile, &outWfmEvent);
-        hdf5io_flush_file(outWfmFile);
+            }
+        }     
+            outWfmEvent.eventId = inWfmEvent.eventId;
+            hdf5io_write_event(outWfmFile, &outWfmEvent);
+            hdf5io_flush_file(outWfmFile);
     }
-
-    free(inWfmBuf);
-    free(outWfmBuf);
-    hdf5io_close_file(inWfmFile);
-    hdf5io_flush_file(outWfmFile);
-    hdf5io_close_file(outWfmFile);
+        free(inWfmBuf);
+        free(outWfmBuf);
+        hdf5io_close_file(inWfmFile);
+        hdf5io_flush_file(outWfmFile);
+        hdf5io_close_file(outWfmFile);
 
     //return EXIT_SUCCESS;
 }
@@ -145,9 +139,10 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 int main()
 {
 
-demux("dec_0x5f_20events.h5", "dmuxOUT_exe.h5", 6879, 4, 20736, 1, 2, 20737);
+shaper("../data_TM1x1/out22_dmux.h5", "../data_TM1x1/out22_filter.h5", 10, 5, 15);
 
 return EXIT_SUCCESS;
+
 }
 
 
