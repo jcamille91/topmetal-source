@@ -3,17 +3,24 @@ import sys
 import h5py
 import matplotlib.pyplot as plt
 
-###          [1]    [2]    [3]
-### input filename event channel
-###        "abc.h5" "C0"  "0-7"
+# for 1x1 sensor, all the event is always C0 and there's only one channel.
+# use event and channel arguments later if necessary, fixed for now.
+
+###          [1]  
+### input filename 
+###        "abc.h5" 
+
 
 text = 0
 dump = 0
 plot = 1
 frameSize = 4*(72**2)   # 64*(72**2)
 file_name = sys.argv[1]
-event = sys.argv[2]
-channel = int(sys.argv[3])
+#event = sys.argv[2]
+#channel = int(sys.argv[3])
+event = 'C0'
+channel = 0
+
 
 with h5py.File(file_name,'r') as hf:
    data = hf.get(event)
