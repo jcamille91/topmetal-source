@@ -139,8 +139,10 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 int main()
 {
 
-shaper("../data_TM1x1/out22_dmux.h5", "../data_TM1x1/out22_filter.h5", 10, 5, 15);
+//shaper("../data_TM1x1/out22_dmux.h5", "../data_TM1x1/out22_filter.h5", 10, 20, 40);
+//shaper("../data_TM1x1/step_dmux.h5", "../data_TM1x1/step_filter.h5", 10, 20, -1);
 
+shaper("../data_TM1x1/exp.h5", "../data_TM1x1/exp_filter.h5", 10, 20, 40);
 return EXIT_SUCCESS;
 
 }
