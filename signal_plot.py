@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 dump = 0 
-frameSize = 4096
-nPix = 4096
+nPix = 72**2
 
 # for TM1X1 sensor, event and channel are always zero, so we'll
 # fix them for now. use them as arguments again if necessary. 
@@ -35,8 +34,8 @@ chpix = (channel)*nPix + (pixel) # take ch 0-7, pixels 0-5183 (72**2 - 1)
 samples = np.linspace(0, len(data[0])-1, len(data[0]))
 
 if sys.argv[3] :
-	for i in np.arange(0,len(np_data[channel])):
-	   print i, np_data[channel][i]
+	for i in np.arange(0,len(data[channel])):
+	   print i, data[channel][i]
 
 
 plt.step(samples, data[chpix])
