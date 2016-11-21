@@ -4,7 +4,6 @@ import h5py
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-dump = 0 
 nPix = 72**2
 
 # for TM1X1 sensor, event and channel are always zero, so we'll
