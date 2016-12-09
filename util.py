@@ -4,7 +4,9 @@ import numpy as np
 import h5py 
 from ctypes import *
 import matplotlib.pyplot as plt
-from scipy.signal import find_peaks_cwt, convolve
+from scipy.stats import chisquare
+from scipy.optimize import curve_fit
+from scipy.signal import find_peaks_cwt, convolve, savgol_filter
 
  # demux and pre_shaper are pre-processing functions, applied to all data.
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -18,20 +20,45 @@ def smooth(infile, outfile, l, k, M):
    lib.shaper.argtypes = [c_char_p, c_char_p, c_ulong, c_ulong, c_double]
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
 
-def peakdet_cwt(infile, threshold):
+def savgol(array, npt, order):
+	
+	out = savgol_filter(array, npt, order)
+	return out
+
+def fit_test(infile, pixel):
+
+	fig, axis = plt.subplots(1,1)
+
+	raw = pull(infile, pixel)
+	plot(raw, axis) # plot the raw data
+
+	filt = savgol(raw, 15, 4)
+	plot(filt, axis) # plot the smoothed data
+
+	peaks = img_derivative(filt, axis) # plot peak locations
+	#peaks = peakdet_cwt(filt, axis)    # plot peak locations
+
+	fig.show()
+
+	# fit a single peak first
+	length = 50
+	pulse = raw[peaks[0]:peaks[0]+length]
+
+
+
+def peakdet_cwt(data, axis):
    # do a first check for peaks in the dataset. After finding peaks, should create a list of 
    # 'event' objects that will be modified as the data is further processed.
    width = np.array([1,10,20,30,40,50])
-   vector = pull(infile, 233)
-   candidates = find_peaks_cwt(vector,width)
-   fig, axis = plt.subplots(1,1)	
-   plot(vector, axis)
-   axis.scatter(candidates, vector[candidates], marker='o', color='g', s=40)
-   plt.show()
+   candidates = find_peaks_cwt(data,width)	
+   axis.scatter(candidates, data[candidates], marker='o', color='r', s=40)
+
    return candidates
 
-def img_derivative(infile, pixel):
-	Y = (-1)*pull(infile,pixel)
+def img_derivative(data, axis):
+	
+	Y = (-1)*data
+	mean = np.mean(Y[0:100])
 	#Obtaining derivative
 	kernel = [1, 0, -1]
 	dY = convolve(Y, kernel, 'valid') 
@@ -48,14 +75,17 @@ def img_derivative(infile, pixel):
 	#negative slopes
 	peaks = sorted(set(candidates).intersection(np.where(ddS == 2)[0] + 1))
 
-	plt.step(np.arange(len(Y)), Y)
+	#plt.step(np.arange(len(Y)), Y)
 
-	#If you need a simple filter on peak size you could use:
-	alpha = -0.003
+	# simple filter on peak size 
+	alpha = mean - 0.004
+	# make an array out of peaks with the condition that they pass our threshold alpha
 	peaks = np.array(peaks)[Y[peaks] < alpha]
 
-	plt.scatter(peaks, Y[peaks], marker='x', color='g', s=40)
-	plt.show()
+	axis.scatter(peaks, -1*Y[peaks], marker='x', color='g', s=40)
+	
+
+	return peaks
 #def fit_pulse():
 	# for each peak, fit the pulse so we can extract the time constant and apply the correct shaping filter.
 	
@@ -79,6 +109,10 @@ def pull(infile, pixel):
 
 def plot(data, axis):
 	axis.step(np.arange(len(data)), data)
+
+def plotter(data):
+	plt.step(np.arange(len(data)), data)
+	plt.show()
 
 #def img_plot(infile, point):
 

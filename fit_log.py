@@ -9,15 +9,13 @@ import util
 # 8mv amplitude, offset from start to peak is about 9 samples, time constant is about 1/35 samples
 start = 14420
 peak = 14430
-end = 14480
+end = 14500
 
 data = util.pull('../data_TM1x1/out22_dmux.h5', 233)
-baseline = np.mean(data[:1000])
+baseline = np.mean(data[:100])
 stddev = np.std(data[:1000])
-data = data[peak:end]
-
-x = np.linspace(0, len(data)-1, len(data))
-y = data
+y = data[peak:end]
+x = np.linspace(0, len(y)-1, len(y))
 
 # FAKE IDEAL DATA. guess parameters [0.01, 0, 1/40., 0.8]
 
@@ -35,18 +33,22 @@ y = data
 # x = np.linspace(0, len(a)-1, len(a))
 # y = a
 
+
 def func(x, amp, tau, offset):
-    return amp*np.exp((-1)*tau*(x))+offset
+    return amp*np.exp(tau*x)+offset
 
 def fit_exp_linear(x, y, offset):
     y = y - offset
     y = np.log(y)
-    K, A_log = np.polyfit(x, y, 1)
-    A = np.exp(A_log)
-    return A, K
+    tau, amp_log = np.polyfit(x, y, 1)
+    amp = np.exp(amp_log)
+    return amp, tau
 
+amp, tau = fit_exp_linear(x,y,baseline)
+fit = func(x, amp, tau, baseline)
+print('extracted tau:', 1.0/tau)
 
 fig, axis = plt.subplots(1,1)
 axis.step(x,y)
-axis.scatter(x,func(x,*popt), marker = 'o')
+axis.scatter(x,fit, marker = 'o')
 plt.show()
