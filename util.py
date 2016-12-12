@@ -1,9 +1,16 @@
 # some useful functions for testing things that are used frequently.
 
-import numpy as np
+
+# for importing data from HDF5 files
 import h5py 
 from ctypes import *
+
+# plotting tools
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid.inset_locator import inset_axes
+
+# math, matrices, statistics, and fittting
+import numpy as np
 from scipy.stats import chisquare
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks_cwt, convolve, savgol_filter
@@ -25,25 +32,58 @@ def savgol(array, npt, order):
 	out = savgol_filter(array, npt, order)
 	return out
 
-def fit_test(infile, pixel):
+def model_func(x, amp, tau, offset):
+    return amp*np.exp(-tau*(x))+offset
 
-	fig, axis = plt.subplots(1,1)
+def fit_test(infile, pixel, peakoff, fit_length):
+
+	timestep = (4*72**2)*(3.2*10**-8)
+	# let's make 4 total plots. one for entire channel (25890 pts), then three
+	# other plots to see how some of the fits look.
+	fig1, dax = plt.subplots(1,1)
 
 	raw = pull(infile, pixel)
-	plot(raw, axis) # plot the raw data
+	plot(raw, dax) # plot the raw data
+
 
 	filt = savgol(raw, 15, 4)
-	plot(filt, axis) # plot the smoothed data
+	plot(filt, dax) # plot the smoothed data
 
-	peaks = img_derivative(filt, axis) # plot peak locations
-	#peaks = peakdet_cwt(filt, axis)    # plot peak locations
+	peaks = img_derivative(filt, dax) # plot peak locations
+	#peaks = peakdet_cwt(filt, axis[0,0])    # plot peak locations
 
-	fig.show()
 
 	# fit a single peak first
-	length = 50
-	pulse = raw[peaks[0]:peaks[0]+length]
+	# do a rough investigation if to some degree the peak value is associated
+	# with the fall time of the pulses we are going to fit... for now we'll just fix it to 
+	# a few different values and see the Q values from the chisquare test.
+	fig2, fax = plt.subplots(1,1)
+	baseline = np.mean(raw[:100])
+	
+	# get the data for a pulse
+	pulse = raw[peaks[3]+peakoff:peaks[3]+fit_length+peakoff]
+	x = np.linspace(0, fit_length-1, fit_length)
+	y = pulse
+	par, cov = curve_fit(model_func, x, y, [0.008, 1/35., baseline])
 
+	print 'tau:', 1.0/par[1]
+	print 'amplitude:', 1000*par[0], 'mV'
+	print 'offset:', 1000*par[2], 'mV'
+
+	plot(pulse, fax)
+
+	fax.scatter(x,model_func(x,*par), marker = 'o')
+
+	exp = model_func(x, *par)
+	chisq, P = chisquare(f_obs=pulse, f_exp=exp, ddof=len(pulse)-len(par))
+
+	print 'probability of data occuring for given parameters:', 1.0-P
+	print 'Chi Square sum:', chisq
+
+	### returning values with named tuples ###
+
+	fig1.show() # plot the data
+	fig2.show() # plot a pulse fit
 
 
 def peakdet_cwt(data, axis):
