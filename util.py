@@ -1,15 +1,19 @@
 # some useful functions for testing things that are used frequently.
 
 
-# for importing data from HDF5 files
+# for importing data from HDF5 files into Numpy arrays
 import h5py 
+
+# Ctypes and Numpy support for calling C functions defined in shared libraries.
+# These are functions too slow when implemented in pure Python.
 from ctypes import *
+import numpy.ctypeslib as np_ct
 
 # plotting tools
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 
-# math, matrices, statistics, and fittting
+# math/matrices, statistics, and fittting
 import numpy as np
 from scipy.stats import chisquare
 from scipy.optimize import curve_fit
@@ -27,6 +31,20 @@ def smooth(infile, outfile, l, k, M):
    lib.shaper.argtypes = [c_char_p, c_char_p, c_ulong, c_ulong, c_double]
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
 
+def shaper_np(data, l, k, M):
+	# apply trapezoidal filter to a numpy array, return the numpy array 
+	# for quick analysis / plotting.
+	array_float = npct.ndpointer(dtype=np.float, ndim=1, flags='CONTIGUOUS')
+	lib_shp = npct.load_library("shaper_np", ".")
+	lib_shp.shaper_np.restype = None
+	lib_shp.shaper_np.argtypes = [array_float, array_float]
+
+	trapezoid = np.zeros(len(data))
+
+	#c_float is the correspondingtype for the dataset,
+
+	return trapezoid
+
 def savgol(array, npt, order):
 	
 	out = savgol_filter(array, npt, order)
@@ -35,7 +53,7 @@ def savgol(array, npt, order):
 def model_func(x, amp, tau, offset):
     return amp*np.exp(-tau*(x))+offset
 
-def fit_test(infile, pixel, peakoff, fit_length):
+def fit_test(infile, pixel, pk, fit_length):
 
 	timestep = (4*72**2)*(3.2*10**-8)
 	# let's make 4 total plots. one for entire channel (25890 pts), then three
@@ -59,14 +77,15 @@ def fit_test(infile, pixel, peakoff, fit_length):
 	# a few different values and see the Q values from the chisquare test.
 	fig2, fax = plt.subplots(1,1)
 	baseline = np.mean(raw[:100])
-	
+	rms = (np.std(raw[:100]))
+	peakoff = 0
 	# get the data for a pulse
-	pulse = raw[peaks[3]+peakoff:peaks[3]+fit_length+peakoff]
+	pulse = raw[peaks[pk]+peakoff:peaks[pk]+fit_length+peakoff]
 	x = np.linspace(0, fit_length-1, fit_length)
 	y = pulse
-	par, cov = curve_fit(model_func, x, y, [0.008, 1/35., baseline])
+	par, cov = curve_fit(model_func, x, y, sigma=np.ones(len(pulse))*rms [0.008, 1/35., baseline])
 
-	print 'tau:', 1.0/par[1]
+	print 'tau:', 1.0/par[1], 'samples', (1.0/par[1])*timestep, 'seconds'
 	print 'amplitude:', 1000*par[0], 'mV'
 	print 'offset:', 1000*par[2], 'mV'
 
@@ -103,22 +122,32 @@ def img_derivative(data, axis):
 	kernel = [1, 0, -1]
 	dY = convolve(Y, kernel, 'valid') 
 
-	#Checking for sign-flipping
+	# Checking for sign-flipping
+	# returns 1,-1, or 0 depending on the sign of the derivative values.
+	# normalizes derivative values to single magnitude.
 	S = np.sign(dY)
 	ddS = convolve(S, kernel, 'valid')
 
-	#These candidates are basically all negative slope positions
-	#Add one since using 'valid' shrinks the arrays
+    # all points where the slope is negative, determined by first derivative.
 	candidates = np.where(dY < 0)[0] + (len(kernel) - 1)
 
-	#Here they are filtered on actually being the final such position in a run of
-	#negative slopes
-	peaks = sorted(set(candidates).intersection(np.where(ddS == 2)[0] + 1))
+	# Here they are filtered on actually being the final such position in a run of
+	# negative slopes
 
-	#plt.step(np.arange(len(Y)), Y)
+	# set is unordered collection of unique elements.
+
+	# get the candidates with the same indices as the locations where the second derivative is
+	# equal to two. then put them into order.
+	peaks = sorted(set(candidates).intersection(np.where(ddS == 2)[0] + 1))
+	
+	#for i in np.arange(len(peaks)-1)
+	#	if abs(peaks[i]-peaks[i+1])
+
+	# plt.step(np.arange(len(Y)), Y)
 
 	# simple filter on peak size 
 	alpha = mean - 0.004
+	#alpha = 0
 	# make an array out of peaks with the condition that they pass our threshold alpha
 	peaks = np.array(peaks)[Y[peaks] < alpha]
 
@@ -138,9 +167,10 @@ def img_derivative(data, axis):
 
 def pull(infile, pixel):
 	# retrieve pixel signal data into numpy array.
+	
 	event = 'C0' # for current dataset, only single event and sensor.
 	channel = 0
-	with h5py.File(infile,'r') as hf:
+	with h5py.File(infile,'r') as hf: # open file for read
 		d = hf.get(event)
 		data = np.array(d)
 
@@ -162,7 +192,7 @@ def signal_plot(infile, pixel):
 	nPix = 72**2
 	dump = 0
 
-	#open the file
+	# open the file for read
 	with h5py.File(infile,'r') as hf:
 	   d = hf.get(event)
 	   data = np.array(d)

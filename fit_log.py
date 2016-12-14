@@ -19,20 +19,23 @@ x = np.linspace(0, len(y)-1, len(y))
 
 # FAKE IDEAL DATA. guess parameters [0.01, 0, 1/40., 0.8]
 
-# nPt = 2**30/2 		   # for TM1x1, 1 GB, 2 byte datapoints.
-# frameSize = 4*72**2
-# mStart = 913
-# nFrame = (nPt-mStart)/frameSize
+nPt = 2**30/2 		   # for TM1x1, 1 GB, 2 byte datapoints.
+frameSize = 4*72**2
+mStart = 913
+nFrame = (nPt-mStart)/frameSize
 
 
-# a = np.ones(500, dtype=np.float)*0.8
-# exp = 0.01*np.exp(-(1/40.)*np.linspace(0, 500,500))
-# a += exp
-# a += np.random.normal(0,0.001,500)
+a = np.ones(1500, dtype=np.float)*0.8
+exp = 0.01*np.exp(-(1/40.)*np.linspace(0, 500,500))
+a[500:1000] += exp
+a[550:1050] += exp
+a[600:1100] += exp
+a[1000:1500] += exp
 
-# x = np.linspace(0, len(a)-1, len(a))
-# y = a
+x = np.linspace(0, len(a)-1, len(a))
+y = a
 
+a += np.random.normal(0,0.001,500)
 
 def func(x, amp, tau, offset):
     return amp*np.exp(tau*x)+offset

@@ -27,20 +27,17 @@ the appropriate amount of memory to hold the data for the pulses' parameters.
 /* do we want to use the absolute index of the wfmBuf, or separate the channels with
 their own variables?
 */
-
-size_t *index;
-
-float *tau;
-
-uint *k;
-
-uint *l;
-
+uint *window; /* number of points to filter after the peak */
+size_t *index; /* location of pulse peak in the data */
+uint *M; /* time constant */
+uint *k; /* rise time of ramp */
+uint *l; /* delay of the peak */
+         /* l-k is the flat-top duration */
 };
 
 // argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
 
-void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
+void shaper_pulse(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 {
 
     /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
@@ -54,6 +51,7 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
     double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     
 
+    struct pulse in_pulse;
 
     struct hdf5io_waveform_file *inWfmFile, *outWfmFile;
     struct waveform_attribute inWfmAttr, outWfmAttr;
@@ -61,6 +59,14 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
     struct hdf5io_waveform_event_float outWfmEvent;
     IN_WFM_BASE_TYPE *inWfmBuf;
     OUT_WFM_BASE_TYPE *outWfmBuf;
+
+    /* setting the parameters here manually to see if this works */
+    in_pulse.n_pulse = 3;
+    win_buf = (uint*)malloc(in_pulse.n_pulse * sizeof(uint));
+    in_pulse.window  = win_buf;
+
+    inWfmBuf = (IN_WFM_BASE_TYPE*)malloc(inWfmFile->nPt * inWfmFile->nCh * sizeof(IN_WFM_BASE_TYPE));
+    inWfmEvent.wavBuf = inWfmBuf;
 
     inWfmFile = hdf5io_open_file_for_read(inFileName);
     hdf5io_read_waveform_attribute_in_file_header(inWfmFile, &inWfmAttr);
@@ -112,6 +118,13 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
     outWfmBuf = (OUT_WFM_BASE_TYPE*)malloc(outWfmFile->nPt * outWfmFile->nCh * sizeof(OUT_WFM_BASE_TYPE));
     outWfmEvent.wavBuf = outWfmBuf;
     
+    /* as a test that the indexing is working, set specific events and number of points 
+    around those windows to some specific number. */
+
+    /* since the filter uses memory, how many points before the peak do we begin filtering?
+    what if the two peaks are close to one another ? (define a minimum separation for peaks)
+    */
+
     /* this loop works for multiple sensors, the pixels repeat from 0->5184 for each
        individual sensor. e.g. nCh is (nSensor*5184) */
     for(inWfmEvent.eventId = 0; inWfmEvent.eventId < 1; inWfmEvent.eventId++) {
