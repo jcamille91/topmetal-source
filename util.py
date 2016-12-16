@@ -7,7 +7,8 @@ import h5py
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
 # These are functions too slow when implemented in pure Python.
 from ctypes import *
-import numpy.ctypeslib as np_ct
+import numpy.ctypeslib as npct
+#from shaper import trapezoid
 
 # plotting tools
 import matplotlib.pyplot as plt
@@ -31,19 +32,48 @@ def smooth(infile, outfile, l, k, M):
    lib.shaper.argtypes = [c_char_p, c_char_p, c_ulong, c_ulong, c_double]
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
 
+def test_shaper():
+
+	fig, axis = plt.subplots(1,1)
+	fig2, axis2 = plt.subplots(1,1)
+
+	step = np.ones(2000, dtype=np.float32) 
+	step[:1000] = 0.828 
+	step[1000:] = 0.978
+
+
+
+	filt = shaper_np(step, 20, 10, -1)
+
+	plot(step, axis)
+	plot(filt, axis2)
+	
+	fig.show()
+	fig2.show()
+
 def shaper_np(data, l, k, M):
 	# apply trapezoidal filter to a numpy array, return the numpy array 
 	# for quick analysis / plotting.
-	array_float = npct.ndpointer(dtype=np.float, ndim=1, flags='CONTIGUOUS')
-	lib_shp = npct.load_library("shaper_np", ".")
-	lib_shp.shaper_np.restype = None
-	lib_shp.shaper_np.argtypes = [array_float, array_float]
+	
+	# import the library
+	lib = CDLL("shaper.so")
 
-	trapezoid = np.zeros(len(data))
+	# make pointer type for 1-D arrays of floats.
+	array_float = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
 
-	#c_float is the correspondingtype for the dataset,
 
-	return trapezoid
+	
+	# define argument types. we just defined pointer-arrays for in/out.
+	lib.trapezoid.restype = None
+
+						  # 	  in 		  out   	 length  	l  		k 		  M
+	lib.trapezoid.argtypes = [array_float, array_float, c_ulong, c_ulong, c_ulong, c_double]
+ 
+	# allocate an array to hold output.
+	filt = np.empty_like(data)
+	lib.trapezoid(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M))
+	
+	return np.array(filt)
 
 def savgol(array, npt, order):
 	
@@ -155,19 +185,14 @@ def img_derivative(data, axis):
 	
 
 	return peaks
-#def fit_pulse():
-	# for each peak, fit the pulse so we can extract the time constant and apply the correct shaping filter.
-	
 
-#def event_shaper(infile, pixel, evt_pt, tau):
-   # apply trapezoidal filter to data on event-by-event basis
-   # extract the pulse height and width.
+
 
 #def push(infile, pixel):
 
 def pull(infile, pixel):
-	# retrieve pixel signal data into numpy array.
 	
+	# retrieve pixel signal data into 1D numpy array.
 	event = 'C0' # for current dataset, only single event and sensor.
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
@@ -176,6 +201,16 @@ def pull(infile, pixel):
 
 	return data[pixel]
 
+def pull_all(infile):
+	
+	# retrieve signal data for all 5184 pixels into 2D numpy array.
+	event = 'C0' # for current dataset, only single event and sensor.
+	channel = 0
+	with h5py.File(infile,'r') as hf: # open file for read
+		d = hf.get(event)
+		data = np.array(d)
+
+	return data
 
 def plot(data, axis):
 	axis.step(np.arange(len(data)), data)

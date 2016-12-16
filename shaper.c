@@ -14,6 +14,42 @@ typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
 
 // argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
 
+void trapezoid(float * input, float * filter, size_t length, size_t k, size_t l, double M)
+{
+    ssize_t i, j, jk, jl, jkl, idx1=0;
+    double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
+
+
+    fprintf(stderr, "length: %zu\n", length);
+    fprintf(stderr, "k: %zu\n", k);
+    fprintf(stderr, "l: %zu\n", l);
+    fprintf(stderr, "M: %f\n", M);
+    fprintf(stderr, "in[999]: %f\n", input[998]);
+    fprintf(stderr, "in[1000]: %f\n", input[999]);
+    fprintf(stderr, "in[1001]: %f\n", input[1000]);
+
+    for(i = 0; i < length-1; i++) {
+        j=i; jk = j-k; jl = j-l; jkl = j-k-l;
+        // "condition ? x : y" is a compact if-else statment, "ternary operator"
+        vj   = (j   >= 0) ? input[j]   : input[idx1];
+        vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
+        vjl  = (jl  >= 0) ? input[jl]  : input[idx1];
+        vjkl = (jkl >= 0) ? input[jkl] : input[idx1];
+
+        dkl = vj - vjk - vjl + vjkl;
+        pp = pp + dkl;
+
+        if(M >= 0.0) {
+            s = s + pp + dkl * M;
+        }
+        
+        else { /* infinite decay time, so the input is a step function */
+            s = s + dkl;
+        }
+        
+        filter[i] = s / (fabs(M) * (double)k);
+    }
+}
 void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 {
 
