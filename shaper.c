@@ -16,10 +16,19 @@ typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
 
 void trapezoid(float * input, float * filter, size_t length, size_t k, size_t l, double M)
 {
+    /* intended to be used by python numpy arrays, to quickly test different trapezoidal
+     filtering parameters on data. */
+
+      /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
+     * rise time, l is the delay of peak, l-k is the flat-top duration, M
+     * is the decay time constant (in number of samples) of the input
+     * pulse.  Set M=-1.0 to deal with a step-like input function.
+     */
+
     ssize_t i, j, jk, jl, jkl, idx1=0;
     double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
 
-
+    /* can use these to verify that the desired input is reaching the function.
     fprintf(stderr, "length: %zu\n", length);
     fprintf(stderr, "k: %zu\n", k);
     fprintf(stderr, "l: %zu\n", l);
@@ -27,6 +36,7 @@ void trapezoid(float * input, float * filter, size_t length, size_t k, size_t l,
     fprintf(stderr, "in[999]: %f\n", input[998]);
     fprintf(stderr, "in[1000]: %f\n", input[999]);
     fprintf(stderr, "in[1001]: %f\n", input[1000]);
+    */
 
     for(i = 0; i < length-1; i++) {
         j=i; jk = j-k; jl = j-l; jkl = j-k-l;
