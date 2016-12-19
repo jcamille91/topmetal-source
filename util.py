@@ -1,6 +1,5 @@
 # some useful functions for testing things that are used frequently.
 
-
 # for importing data from HDF5 files into Numpy arrays
 import h5py 
 
@@ -18,6 +17,79 @@ import numpy as np
 from scipy.stats import chisquare
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks_cwt, convolve, savgol_filter
+
+# there's some annoying warning when scipy tries to use some external library for least
+# squares fitting.
+import warnings
+warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
+
+def fit_test(pixel, pk, fit_length, l, k):
+
+	# temporarily fixed infile because we're just using one file. insert it into arguments
+	# again if we need the flexibility.
+	infile = '../data_TM1x1/out22_dmux.h5'
+
+	fig1, raw_ax = plt.subplots(1,1)
+
+	raw = pull(infile, pixel)
+	plot(raw, raw_ax) # plot the raw data
+
+	filt = savgol(raw, 15, 4)
+	plot(filt, raw_ax) # plot the smoothed data
+
+	peaks = img_der(filt, raw_ax) # plot peak locations
+	#peaks = peakdet_cwt(filt, axis[0,0])    # plot peak locations
+
+
+	# fit a single peak first
+	# do a rough investigation if to some degree the peak value is associated
+	# with the fall time of the pulses we are going to fit... for now we'll just fix it to 
+	# a few different values and see the Q values from the chisquare test.
+
+	# get the data for a pulse
+	pulse = raw[peaks[pk]:peaks[pk]+fit_length]
+	fig2, fit_ax = plt.subplots(1,1)
+	baseline = np.mean(raw[:100])
+	rms = (np.std(raw[:100]))*np.ones(len(pulse))
+
+	x = np.linspace(0, fit_length-1, fit_length)
+	y = pulse
+
+	def model_func(x, amp, tau, offset):
+		return amp*np.exp(-tau*(x))+offset
+
+	par, cov = curve_fit(model_func, x, y, p0=[0.008, 1/35., baseline], sigma=rms)
+	M = 1.0/par[1]
+	timestep = (4*72**2)*(3.2*10**-8)
+
+	print 'tau:', M, 'samples', M*timestep, 'seconds'
+	print 'amplitude:', 1000*par[0], 'mV'
+	print 'offset:', 1000*par[2], 'mV'
+
+	plot(pulse, fit_ax)
+
+	fit_ax.scatter(x,model_func(x,*par), marker = 'o')
+
+	exp = model_func(x, *par)
+	chisq, P = chisquare(f_obs=pulse, f_exp=exp, ddof=len(pulse)-len(par))
+
+	print 'probability of data occuring for given parameters:', 1.0-P
+	print 'Chi Square sum:', chisq
+
+	fig3, trap_ax = plt.subplots(1,1)
+
+	# l = 20
+	# k = 10
+	window = 100
+	shp_in = raw[peaks[pk]-window:peaks[pk]+fit_length+window]
+	trap = shaper_np(shp_in, l, k, M)
+
+	plot(trap, trap_ax)
+	### returning values with named tuples ###
+
+	fig1.show() # plot the data
+	fig2.show() # plot a pulse fit
+	fig3.show() 
 
  # demux and pre_shaper are pre-processing functions, applied to all data.
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -67,11 +139,8 @@ def shaper_np(data, l, k, M):
 	# make pointer type for 1-D arrays of floats.
 	array_float = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
 
-
-	
 	# define argument types. we just defined pointer-arrays for in/out.
 	lib.trapezoid.restype = None
-
 						  # 	  in 		  out   	 length  	l  		k 		  M
 	lib.trapezoid.argtypes = [array_float, array_float, c_ulong, c_ulong, c_ulong, c_double]
  
@@ -86,69 +155,6 @@ def savgol(array, npt, order):
 	out = savgol_filter(array, npt, order)
 	return out
 
-def fit_test(infile, pixel, pk, fit_length):
-
-	timestep = (4*72**2)*(3.2*10**-8)
-	# let's make 4 total plots. one for entire channel (25890 pts), then three
-	# other plots to see how some of the fits look.
-	fig1, raw_ax = plt.subplots(1,1)
-
-	raw = pull(infile, pixel)
-	plot(raw, raw_ax) # plot the raw data
-
-
-	filt = savgol(raw, 15, 4)
-	plot(filt, raw_ax) # plot the smoothed data
-
-	peaks = img_derivative(filt, raw_ax) # plot peak locations
-	#peaks = peakdet_cwt(filt, axis[0,0])    # plot peak locations
-
-
-	# fit a single peak first
-	# do a rough investigation if to some degree the peak value is associated
-	# with the fall time of the pulses we are going to fit... for now we'll just fix it to 
-	# a few different values and see the Q values from the chisquare test.
-
-	# get the data for a pulse
-	pulse = raw[peaks[pk]:peaks[pk]+fit_length]
-	fig2, fit_ax = plt.subplots(1,1)
-	baseline = np.mean(raw[:100])
-	rms = (np.std(raw[:100]))*np.ones(len(pulse))
-
-	x = np.linspace(0, fit_length-1, fit_length)
-	y = pulse
-
-	def model_func(x, amp, tau, offset):
-		return amp*np.exp(-tau*(x))+offset
-
-	par, cov = curve_fit(model_func, x, y, p0=[0.008, 1/35., baseline], sigma=rms)
-	M = 1.0/par[1]
-	print 'tau:', M, 'samples', M*timestep, 'seconds'
-	print 'amplitude:', 1000*par[0], 'mV'
-	print 'offset:', 1000*par[2], 'mV'
-
-	plot(pulse, fit_ax)
-
-	fit_ax.scatter(x,model_func(x,*par), marker = 'o')
-
-	exp = model_func(x, *par)
-	chisq, P = chisquare(f_obs=pulse, f_exp=exp, ddof=len(pulse)-len(par))
-
-	print 'probability of data occuring for given parameters:', 1.0-P
-	print 'Chi Square sum:', chisq
-
-	fig3, trap_ax = plt.subplots(1,1)
-
-	window = 100
-	shp_in = raw[peaks[pk]-window:peaks[pk]+fit_length+window]
-	trap = shaper_np(shp_in, 20, 10, M)
-
-	plot(trap, trap_ax)
-	### returning values with named tuples ###
-
-	fig1.show() # plot the data
-	fig2.show() # plot a pulse fit
-	fig3.show() # plot trapezoidal filter of raw data
 
 def peakdet_cwt(data, axis):
    # do a first check for peaks in the dataset. After finding peaks, should create a list of 
@@ -159,7 +165,7 @@ def peakdet_cwt(data, axis):
 
    return candidates
 
-def img_derivative(data, axis):
+def img_der(data, axis):
 	
 	Y = (-1)*data
 	mean = np.mean(Y[0:100])
