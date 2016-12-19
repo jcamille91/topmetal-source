@@ -103,6 +103,9 @@ void demux(char *inFileName, char *outFileName, size_t mStart, double mChLen, si
     if(frameSize > 0) {
         frameSize = frameSize;
     */
+
+    // wfmoff and mstart are both defined in the case that the frameSize and the length of
+    // the actual data are different. this would allow you to skip over unwanted 'bad' data periodically.
     inWfmAttr.nFrames = (size_t)((inWfmAttr.nPt - mStart) / frameSize);
     wfmOff = mStart;
     mStart = 0;
