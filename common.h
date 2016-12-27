@@ -3,7 +3,7 @@
  */
 #ifndef __COMMON_H__
 #define __COMMON_H__
-
+// name mangling macros. one for HDF5 i/o, other for FFTW3
 #define HDF5IO(name) hdf5io_ ## name
 
 /* filling memory per channel:
@@ -22,15 +22,24 @@ data out.
 so nPt = 16 * 33554432 = 536870912
 */
 
+// hardware memory and number of sensor channels
 #define SCOPE_NCH 16
 #define SCOPE_MEM_LENGTH_MAX 33554432 // GiB memory, (16-bit x 1-ch) per point
 // #define SCOPE_MEM_LENGTH_MAX 16777216 // 256MiB memory, (16-bit X 8-ch) per point
-#define ANALYSIS_WAVEFORM_BASE_TYPE double
+
+// HDF5 i/o types and name mangling macro
+#define HDF5IO(name) hdf5io_ ## name
 #define SCOPE_DATA_TYPE_INT int16_t
 #define SCOPE_DATA_TYPE_FLOAT float
 #define SCOPE_DATA_HDF5_TYPE_INT H5T_NATIVE_INT16
 #define SCOPE_DATA_HDF5_TYPE_FLOAT H5T_NATIVE_FLOAT
 
+// types and name mangling macro for filters.c
+#define RAW_WAVEFORM_BASE_TYPE SCOPE_DATA_TYPE
+#define ANALYSIS_WAVEFORM_BASE_TYPE double
+#define FFT_BASE_TYPE double /* if this is float, FFTW should be fftwf_ */
+#define FFTW(name) fftw_ ## name
+#define WAVELET_BASE_TYPE double
 
 struct waveform_attribute
 {

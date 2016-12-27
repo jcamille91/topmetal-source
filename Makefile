@@ -17,7 +17,8 @@ LIBS    += -L/opt/local/lib -lpthread -lhdf5
 GSLLIBS  = $(shell gsl-config --libs)
 CFLAGS  += -DH5_NO_DEPRECATED_SYMBOLS
 SHLIB_CFLAGS += -DH5_NO_DEPRECATED_SYMBOLS
-#LIBS    += -lfftw3_threads -lfftw3
+LIBS    += $(GSLLIBS)
+LIBS    += -lfftw3_threads -lfftw3
 ############################# OS & ARCH specifics #############################
 ifneq ($(if $(filter Linux %BSD,$(OSTYPE)),OK), OK)
   ifeq ($(OSTYPE), Darwin)
@@ -53,8 +54,8 @@ endif
 ############################ Define targets ###################################
 EXE_TARGETS = demux shaper
 DEBUG_EXE_TARGETS = hdf5rawWaveformIo
-SHLIB_TARGETS = H5SHLIB.so demux.so shaper.so
-O_TARGETS = hdf5rawWaveformIo.o demux.o shaper.o
+SHLIB_TARGETS = H5SHLIB.so demux.so shaper.so filters.so
+O_TARGETS = hdf5rawWaveformIo.o demux.o shaper.o filters.o
 
 ifeq ($(ARCH), x86_64) # compile a 32bit version on 64bit platforms
   # SHLIB_TARGETS += XXX_m32$(SHLIB_EXT)
@@ -80,6 +81,9 @@ demux: demux.c hdf5rawWaveformIo.o
 shaper.o: shaper.c hdf5rawWaveformIo.o
 shaper: shaper.c hdf5rawWaveformIo.o
 	$(CC) $(CFLAGS) $(INCLUDE) $^ $(LIBS) $(LDFLAGS) -o $@
+filters.o: filters.c hdf5rawWaveformIo.o
+filters.so: filters.o hdf5rawWaveformIo.o
+	$(CC) $^ $(SHLIB_CFLAGS) $(INCLUDE) -o filters.so $(LIBS)
 H5SHLIB.so: hdf5rawWaveformIo.o
 	$(CC) hdf5rawWaveformIo.o $(SHLIB_CFLAGS) $(INCLUDE) -o H5SHLIB.so $(LIBS)
 demux.so: demux.o hdf5rawWaveformIo.o

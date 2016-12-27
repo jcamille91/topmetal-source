@@ -18,12 +18,12 @@ from scipy.stats import chisquare
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks_cwt, convolve, savgol_filter
 
-# there's some annoying warning when scipy tries to use some external library for least
-# squares fitting.
+# annoying/harmless warning when scipy tries to use some external library 
+# for least squares fitting. https://github.com/scipy/scipy/issues/5998
 import warnings
 warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
 
-def fit_test(pixel, pk, fit_length, l, k):
+def test(pixel, pk, fit_length, l, k):
 
 	# temporarily fixed infile because we're just using one file. insert it into arguments
 	# again if we need the flexibility.
@@ -89,7 +89,7 @@ def fit_test(pixel, pk, fit_length, l, k):
 
 	fig1.show() # plot the data
 	fig2.show() # plot a pulse fit
-	fig3.show() 
+	fig3.show() # plot trapezoidal filter response to pulse
 
  # demux and pre_shaper are pre-processing functions, applied to all data.
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -128,6 +128,43 @@ def test_shaper(l, k, M):
 	fig.show()
 	#fig2.show()
 	fig3.show()
+
+def test_savgol():
+	fig, axis = plt.subplots(1,1)
+	fig2, axis2 = plt.subplots(1,1)
+	fig3, axis3 = plt.subplots(1,1)
+
+	data = pull('../data_TM1x1/out22_dmux.h5', 100)
+	data.dtype = np.float64
+	filt1 = savgol(data, 15, 4)
+	filt2 = npsavgol(data, 4, 0, 15)
+
+	plot(data, axis)
+	plot(filt1, axis2)
+	plot(filt2, axis3)
+
+	fig.show()
+	fig2.show()
+	fig3.show()
+
+def npsavgol(data, order, der, window):
+	# apply savitsky-golay 'least squares' filter to a numpy array, return the
+	# numpy array for quick analysis.
+
+	lib = CDLL("filters.so")
+
+	# make pointer type for 1-D arrays of floats.
+	array_double = npct.ndpointer(c_double, ndim=1, flags='CONTIGUOUS')
+
+	# define argument types. we just defined pointer-arrays for in/out.
+	lib.savgol_np.restype = None
+						  # 	  in 		  out   	 length  	order    der 	window
+	lib.savgol_np.argtypes = [array_double, array_double, c_ulong, c_int, c_int, c_int]
+ 
+	filt = np.empty_like(data)
+	lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
+	
+	return np.array(filt)
 
 def shaper_np(data, l, k, M):
 	# apply trapezoidal filter to a numpy array, return the numpy array 
@@ -212,13 +249,13 @@ def img_der(data, axis):
 #def push(infile, pixel):
 
 def pull(infile, pixel):
-	
+	#infile = '../data_TM1x1/out22_dmux'
 	# retrieve pixel signal data into 1D numpy array.
 	event = 'C0' # for current dataset, only single event and sensor.
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
 		d = hf.get(event)
-		data = np.array(d)
+		data = np.array(d, dtype=np.float64)
 
 	return data[pixel]
 
