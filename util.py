@@ -4,7 +4,7 @@
 import h5py 
 
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
-# These are functions too slow when implemented in pure Python.
+# These functions are too slow when implemented in pure Python.
 from ctypes import *
 import numpy.ctypeslib as npct
 
@@ -22,6 +22,17 @@ from scipy.signal import find_peaks_cwt, convolve, savgol_filter
 # for least squares fitting. https://github.com/scipy/scipy/issues/5998
 import warnings
 warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
+
+# define Numpy pointer types for passing arrays between C and Python
+float_ptr = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
+sizet_ptr = npct.ndpointer(c_ulong, ndim=1, flags='CONTIGUOUS')
+double_ptr = npct.ndpointer(c_double, ndim=1, flags='CONTIGUOUS')
+
+# make a peak Ctypes structure for trapezoidal filtering. "Structure" is from Ctypes.
+class PEAK(Structure):
+	_fields_ = 
+	[("LEFT", sizet_ptr), ("RIGHT", sizet_ptr),
+	("l", sizet_ptr), ("k", sizet_ptr), ("M", double_ptr)]
 
 def test(pixel, pk, fit_length, l, k):
 
@@ -103,7 +114,7 @@ def smooth(infile, outfile, l, k, M):
    lib.shaper.argtypes = [c_char_p, c_char_p, c_ulong, c_ulong, c_double]
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
 
-def test_shaper(l, k, M):
+def test_shaper_np(l, k, M):
 
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
@@ -147,19 +158,15 @@ def test_savgol():
 	fig2.show()
 	fig3.show()
 
-def npsavgol(data, order, der, window):
+def savgol_np(data, order, der, window):
 	# apply savitsky-golay 'least squares' filter to a numpy array, return the
 	# numpy array for quick analysis.
 
 	lib = CDLL("filters.so")
 
-	# make pointer type for 1-D arrays of floats.
-	array_double = npct.ndpointer(c_double, ndim=1, flags='CONTIGUOUS')
-
-	# define argument types. we just defined pointer-arrays for in/out.
 	lib.savgol_np.restype = None
 						  # 	  in 		  out   	 length  	order    der 	window
-	lib.savgol_np.argtypes = [array_double, array_double, c_ulong, c_int, c_int, c_int]
+	lib.savgol_np.argtypes = [double_ptr, double_ptr, c_ulong, c_int, c_int, c_int]
  
 	filt = np.empty_like(data)
 	lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
@@ -173,13 +180,9 @@ def shaper_np(data, l, k, M):
 	# import the library
 	lib = CDLL("shaper.so")
 
-	# make pointer type for 1-D arrays of floats.
-	array_float = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
-
-	# define argument types. we just defined pointer-arrays for in/out.
 	lib.trapezoid.restype = None
-						  # 	  in 		  out   	 length  	l  		k 		  M
-	lib.trapezoid.argtypes = [array_float, array_float, c_ulong, c_ulong, c_ulong, c_double]
+						  # 	  in 		out   	 length  	l  		k 		  M
+	lib.trapezoid.argtypes = [float_ptr, float_ptr, c_ulong, c_ulong, c_ulong, c_double]
  
 	# allocate an array to hold output.
 	filt = np.empty_like(data)
@@ -187,7 +190,11 @@ def shaper_np(data, l, k, M):
 	
 	return np.array(filt)
 
-def savgol(array, npt, order):
+def setup():
+
+	loc 
+
+def savgol_scipy(array, npt, order):
 	
 	out = savgol_filter(array, npt, order)
 	return out
@@ -242,7 +249,7 @@ def img_der(data, axis):
 	axis.scatter(peaks, -1*Y[peaks], marker='x', color='g', s=40)
 	
 
-	return peaks
+	return [dY,S,ddS,candidates, peaks] 
 
 
 

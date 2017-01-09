@@ -68,8 +68,25 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
      * is the decay time constant (in number of samples) of the input
      * pulse.  Set M=-1.0 to deal with a step-like input function.
      */
+
+
+    /*  in this stage, we want L/R for each peak. at a higher level
+    we could choose different ways to calculate L/R based on a window and peak center.
+    but maybe it won't be symmetric since the rise and fall times are not.
+
+    then we could use a struct with multiple parallel arrays.
+
+    i guess the question is how many samples before the rise time do we need for a 
+    good shaping of the pulse to estimate the height and width. and what amplitude do we expect
+    from the pulse?  does it represent the actual peak of the original exponential or something else?
+
+    in CTypes, we can use the structure functionality, with the pointer/byref() functionality to pass
+    parallel arrays for peak locations.
+
+    POINTER(c_type) is a datatype for ctypes, we can use this inside of the Structure Class.
+    */
     size_t nEventsInFile;
-    //size_t idx1; if this isn't signed, indices might do werid things. even though it should never be negative.
+    //size_t idx1; if this isn't signed, indices might do weird things. even though it should never be negative.
     ssize_t iCh, i, j, jk, jl, jkl, idx1;
     double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     

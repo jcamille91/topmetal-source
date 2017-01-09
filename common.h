@@ -35,10 +35,11 @@ so nPt = 16 * 33554432 = 536870912
 #define SCOPE_DATA_HDF5_TYPE_FLOAT H5T_NATIVE_FLOAT
 
 // types and name mangling macro for filters.c
+#define FFTW(name) fftw_ ## name
 #define RAW_WAVEFORM_BASE_TYPE SCOPE_DATA_TYPE
 #define ANALYSIS_WAVEFORM_BASE_TYPE double
 #define FFT_BASE_TYPE double /* if this is float, FFTW should be fftwf_ */
-#define FFTW(name) fftw_ ## name
+
 #define WAVELET_BASE_TYPE double
 
 struct waveform_attribute
