@@ -1,4 +1,4 @@
-# some useful functions for testing things that are used frequently.
+# some useful functions that are used frequently.
 
 # for importing data from HDF5 files into Numpy arrays
 import h5py 
@@ -12,7 +12,7 @@ import numpy.ctypeslib as npct
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 
-# math/matrices, statistics, and fittting
+# math/matrices, statistics, and fitting
 import numpy as np
 from scipy.stats import chisquare
 from scipy.optimize import curve_fit
@@ -30,9 +30,8 @@ double_ptr = npct.ndpointer(c_double, ndim=1, flags='CONTIGUOUS')
 
 # make a peak Ctypes structure for trapezoidal filtering. "Structure" is from Ctypes.
 class PEAK(Structure):
-	_fields_ = 
-	[("LEFT", sizet_ptr), ("RIGHT", sizet_ptr),
-	("l", sizet_ptr), ("k", sizet_ptr), ("M", double_ptr)]
+	_fields_ = [("nPk", c_ulong), ("LEFT", sizet_ptr), ("RIGHT", sizet_ptr),
+				("l", sizet_ptr), ("k", sizet_ptr), ("M", double_ptr)]
 
 def test(pixel, pk, fit_length, l, k):
 
@@ -42,10 +41,11 @@ def test(pixel, pk, fit_length, l, k):
 
 	fig1, raw_ax = plt.subplots(1,1)
 
-	raw = pull(infile, pixel)
+	raw = pull_one(infile, pixel)
 	plot(raw, raw_ax) # plot the raw data
 
-	filt = savgol(raw, 15, 4)
+	filt = savgol_scipy(raw, 15, 4)
+	#filt = savgol_np(raw, 4, 0, 15)
 	plot(filt, raw_ax) # plot the smoothed data
 
 	peaks = img_der(filt, raw_ax) # plot peak locations
@@ -102,6 +102,8 @@ def test(pixel, pk, fit_length, l, k):
 	fig2.show() # plot a pulse fit
 	fig3.show() # plot trapezoidal filter response to pulse
 
+	# now let's iterate through the peaks and filter them with their appropriate time constants
+
  # demux and pre_shaper are pre-processing functions, applied to all data.
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
    lib = CDLL("demux.so")
@@ -113,6 +115,24 @@ def smooth(infile, outfile, l, k, M):
    lib = CDLL("shaper.so")
    lib.shaper.argtypes = [c_char_p, c_char_p, c_ulong, c_ulong, c_double]
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
+
+#def test_trap():
+
+
+	# if we do it on an hdf5 file. you start filtering with the default.
+	# then at the first two peak locations, the filter parameters should change.
+
+	# let's make some data with two different peaks.
+	# we can write to an hdf5 file, or we can modify the numpy friendly shaper.
+
+	# lets create peak object and assign peak location and filter parameters.
+
+	# plot the original data, then lets plot the peaks.
+
+	# check the baseline before/after the change in filter parameters
+	# can also observe any effect by just doing this on random noisy data.
+
+
 
 def test_shaper_np(l, k, M):
 
@@ -145,8 +165,7 @@ def test_savgol():
 	fig2, axis2 = plt.subplots(1,1)
 	fig3, axis3 = plt.subplots(1,1)
 
-	data = pull('../data_TM1x1/out22_dmux.h5', 100)
-	data.dtype = np.float64
+	data = pull_one('../data_TM1x1/out22_dmux.h5', 100)
 	filt1 = savgol(data, 15, 4)
 	filt2 = npsavgol(data, 4, 0, 15)
 
@@ -248,14 +267,14 @@ def img_der(data, axis):
 
 	axis.scatter(peaks, -1*Y[peaks], marker='x', color='g', s=40)
 	
-
-	return [dY,S,ddS,candidates, peaks] 
+	return peaks
+	#return [dY,S,ddS,candidates, peaks] 
 
 
 
 #def push(infile, pixel):
 
-def pull(infile, pixel):
+def pull_one(infile, pixel):
 	#infile = '../data_TM1x1/out22_dmux'
 	# retrieve pixel signal data into 1D numpy array.
 	event = 'C0' # for current dataset, only single event and sensor.

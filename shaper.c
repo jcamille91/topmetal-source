@@ -40,7 +40,8 @@ void trapezoid(float * input, float * filter, size_t length, size_t k, size_t l,
 
     for(i = 0; i < length-1; i++) {
         j=i; jk = j-k; jl = j-l; jkl = j-k-l;
-        // "condition ? x : y" is a compact if-else statment, "ternary operator"
+/*   "RESULT = CONDITION  ?     x      :     y      " 
+        is a compact if-else statment, "ternary operator" */
         vj   = (j   >= 0) ? input[j]   : input[idx1];
         vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
         vjl  = (jl  >= 0) ? input[jl]  : input[idx1];

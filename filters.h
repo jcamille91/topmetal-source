@@ -7,6 +7,20 @@
 #define FFTW_NTHREADS_DEFAULT 4
 #define FFTW_FLAGS_DEFAULT FFTW_ESTIMATE
 
+// types and name mangling macro for filters.c
+#define FFTW(name) fftwf_ ## name
+#define RAW_WAVEFORM_BASE_TYPE SCOPE_DATA_TYPE_FLOAT
+#define ANALYSIS_WAVEFORM_BASE_TYPE float
+#define FFT_BASE_TYPE float /* if this is float, FFTW should be fftwf_. also include -lfftw3f in the makefile. */
+                            /* if this is double, FFTW should be fftw_. also include -lfftw3 in the makefile. */
+#define WAVELET_BASE_TYPE double
+
+/* note: fftw_cleanup_threads, fftw_init_threads, and fftw_plan_with_nthreads
+were hardcoded instead of using the above name mangling macro. these thread functions don't depend
+on the datatype being float/double/long, so if we want to use the macro to quickly change between
+data types, these need to be hardcoded separately. these fftw functions are called in the
+filters_init_for_convolution and filters_close functions. */
+
 typedef struct filters_handle 
 {
     /* public for i/o */

@@ -67,10 +67,10 @@ filters_t *filters_init_for_convolution(ANALYSIS_WAVEFORM_BASE_TYPE *inWav, size
     }
 
     if(fHdl->fftwNThreads > 0) {
-        if(FFTW(init_threads)() == 0) {
+        if(fftw_init_threads() == 0) {
             error_printf("fftw_init_threads error!\n");
         }
-        FFTW(plan_with_nthreads)(fHdl->fftwNThreads);
+        fftw_plan_with_nthreads(fHdl->fftwNThreads);
     }
     
     fHdl->fftwWork = (FFT_BASE_TYPE*) FFTW(malloc)(sizeof(FFT_BASE_TYPE) * fHdl->fftLen);
@@ -107,7 +107,7 @@ int filters_close(filters_t *fHdl)
         FFTW(free)(fHdl->fftwWork1);
         FFTW(free)(fHdl->fftwWin);
         if(fHdl->fftwNThreads > 0) {
-            FFTW(cleanup_threads)();
+            fftw_cleanup_threads();
             FFTW(cleanup)();
         }
     }
