@@ -15,10 +15,10 @@ TINYSCHEME_FEATURES := -DUSE_DL=1 -DUSE_MATH=1 -DUSE_ASCII_NAMES=0
 INCLUDE += -I/opt/local/include -I./tinyscheme/trunk
 LIBS    += -L/opt/local/lib -lpthread -lhdf5
 GSLLIBS  = $(shell gsl-config --libs)
-CFLAGS  += -DH5_NO_DEPRECATED_SYMBOLS
+CFLAGS  += -DH5_NO_DEPRECATED_SYMBOLS 
 SHLIB_CFLAGS += -DH5_NO_DEPRECATED_SYMBOLS
 LIBS    += $(GSLLIBS)
-LIBS    += -lfftw3_threads -lfftw3 -lfftw3f
+LIBS    += -lfftw3_threads -lfftw3f_threads -lfftw3 -lfftw3f
 ############################# OS & ARCH specifics #############################
 ifneq ($(if $(filter Linux %BSD,$(OSTYPE)),OK), OK)
   ifeq ($(OSTYPE), Darwin)

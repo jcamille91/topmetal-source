@@ -45,7 +45,7 @@ def test(pixel, pk, fit_length, l, k):
 	plot(raw, raw_ax) # plot the raw data
 
 	filt = savgol_scipy(raw, 15, 4)
-	#filt = savgol_np(raw, 4, 0, 15)
+	#filt = savgol_gsl(raw, 4, 0, 15)
 	plot(filt, raw_ax) # plot the smoothed data
 
 	peaks = img_der(filt, raw_ax) # plot peak locations
@@ -166,8 +166,8 @@ def test_savgol():
 	fig3, axis3 = plt.subplots(1,1)
 
 	data = pull_one('../data_TM1x1/out22_dmux.h5', 100)
-	filt1 = savgol(data, 15, 4)
-	filt2 = npsavgol(data, 4, 0, 15)
+	filt1 = savgol_scipy(data, 15, 4)
+	filt2 = savgol_gsl(data, 4, 0, 15)
 
 	plot(data, axis)
 	plot(filt1, axis2)
@@ -177,15 +177,15 @@ def test_savgol():
 	fig2.show()
 	fig3.show()
 
-def savgol_np(data, order, der, window):
+def savgol_gsl(data, order, der, window):
 	# apply savitsky-golay 'least squares' filter to a numpy array, return the
 	# numpy array for quick analysis.
-
+	test = npct.ndpointer(npct.as_ctypes(np.float32()))
 	lib = CDLL("filters.so")
 
 	lib.savgol_np.restype = None
 						  # 	  in 		  out   	 length  	order    der 	window
-	lib.savgol_np.argtypes = [double_ptr, double_ptr, c_ulong, c_int, c_int, c_int]
+	lib.savgol_np.argtypes = [float_ptr, float_ptr, c_ulong, c_int, c_int, c_int]
  
 	filt = np.empty_like(data)
 	lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
@@ -281,7 +281,7 @@ def pull_one(infile, pixel):
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
 		d = hf.get(event)
-		data = np.array(d, dtype=np.float64)
+		data = np.array(d, dtype=np.float32)
 
 	return data[pixel]
 
@@ -292,7 +292,7 @@ def pull_all(infile):
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
 		d = hf.get(event)
-		data = np.array(d)
+		data = np.array(d, dtype=np.float32)
 
 	return data
 

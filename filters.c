@@ -67,10 +67,10 @@ filters_t *filters_init_for_convolution(ANALYSIS_WAVEFORM_BASE_TYPE *inWav, size
     }
 
     if(fHdl->fftwNThreads > 0) {
-        if(fftw_init_threads() == 0) {
+        if(FFTW(init_threads)() == 0) {
             error_printf("fftw_init_threads error!\n");
         }
-        fftw_plan_with_nthreads(fHdl->fftwNThreads);
+        FFTW(plan_with_nthreads)(fHdl->fftwNThreads);
     }
     
     fHdl->fftwWork = (FFT_BASE_TYPE*) FFTW(malloc)(sizeof(FFT_BASE_TYPE) * fHdl->fftLen);
@@ -107,7 +107,7 @@ int filters_close(filters_t *fHdl)
         FFTW(free)(fHdl->fftwWork1);
         FFTW(free)(fHdl->fftwWin);
         if(fHdl->fftwNThreads > 0) {
-            fftw_cleanup_threads();
+            FFTW(cleanup_threads)();
             FFTW(cleanup)();
         }
     }
@@ -147,7 +147,7 @@ int filters_SavitzkyGolay(filters_t *fHdl, int m, int ld)
     int np;
     ANALYSIS_WAVEFORM_BASE_TYPE *c;
     int ipj, imj, mm, j, k, nl, nr;
-    double fac, sum;
+    SAVGOL_TYPE fac, sum;
     gsl_permutation * p;
     gsl_vector *b;
     gsl_matrix *a;
@@ -169,8 +169,8 @@ int filters_SavitzkyGolay(filters_t *fHdl, int m, int ld)
 
     for(ipj=0;ipj<=(m << 1);ipj++) {
         sum=(ipj ? 0.0 : 1.0);
-        for(k=1;k<=nr;k++) sum += pow((double)(k),(double)(ipj));
-        for(k=1;k<=nl;k++) sum += pow((double)(-k),(double)(ipj));
+        for(k=1;k<=nr;k++) sum += pow((SAVGOL_TYPE)(k),(SAVGOL_TYPE)(ipj));
+        for(k=1;k<=nl;k++) sum += pow((SAVGOL_TYPE)(-k),(SAVGOL_TYPE)(ipj));
         mm=MIN(ipj,2*m-ipj);
         for(imj=-mm;imj<=mm;imj+=2) gsl_matrix_set(a,(ipj+imj)/2,(ipj-imj)/2,sum);
     }
