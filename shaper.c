@@ -12,7 +12,127 @@
 typedef SCOPE_DATA_TYPE_FLOAT IN_WFM_BASE_TYPE;
 typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
 
+// to demonstrate this works, let's do it on dummy data of several different time constants
+// and some noise.
+
+typedef struct peaks_handle 
+{
+    // structure with left and rightmost points of a pulse, 
+    // and the filter parameters for each pulse. might temporarily fix l,k in actual
+    // actual filtering for the moment.
+
+    size_t nPk;
+    size_t *LEFT; // beginning of a peak
+    size_t *RIGHT;
+    size_t *l;
+    size_t *k;
+    double *M;
+
+} peaks_t;
+
 // argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+peaks_t *init_peaks(peaks_t *input) {
+
+return input;
+
+}
+
+void read_arr(size_t *input){
+
+    size_t *y;
+
+    y = input;
+
+    fprintf(stderr, "input 0: %zu\n", y[0]);
+    fprintf(stderr, "input 1: %zu\n", y[1]);
+
+}
+
+void read_struct(peaks_t *input){
+
+    size_t nPk; 
+    size_t *LF; 
+    size_t *RT; 
+    size_t *l; 
+    size_t *k;
+    double *M;
+
+    nPk = input->nPk;
+    LF = input->LEFT;
+    RT = input->RIGHT;
+    l = input->l;
+    k = input->k;
+    M = input->M;
+
+    fprintf(stderr, "nPk's in struct: %zu\n", nPk);
+    fprintf(stderr, "left 0: %zu\n", LF[0]);
+    fprintf(stderr, "right 0: %zu\n", RT[0]);
+    fprintf(stderr, "left 1: %zu\n", LF[1]);
+    fprintf(stderr, "right 1: %zu\n", RT[1]);
+
+
+    fprintf(stderr, "l[0]: %zu\n", l[0]);
+    fprintf(stderr, "k[0]: %zu\n", k[0]);
+    fprintf(stderr, "M[0]: %f\n", M[0]);
+
+    fprintf(stderr, "l[1]: %zu\n", l[1]);
+    fprintf(stderr, "k[1]: %zu\n", k[1]);
+    fprintf(stderr, "M[1]: %f\n", M[1]);
+
+}
+
+// void trapezoid2(float * input, float * filter, size_t length, size_t k, size_t l, double M)
+// {
+//     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
+//      filtering parameters on data. */
+
+//       /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
+//      * rise time, l is the delay of peak, l-k is the flat-top duration, M
+//      * is the decay time constant (in number of samples) of the input
+//      * pulse.  Set M=-1.0 to deal with a step-like input function.
+//      */
+
+//     ssize_t i, j, jk, jl, jkl, idx1=0;
+//     double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
+
+//      can use these to verify that the desired input is reaching the function.
+//     fprintf(stderr, "length: %zu\n", length);
+//     fprintf(stderr, "k: %zu\n", k);
+//     fprintf(stderr, "l: %zu\n", l);
+//     fprintf(stderr, "M: %f\n", M);
+//     fprintf(stderr, "in[999]: %f\n", input[998]);
+//     fprintf(stderr, "in[1000]: %f\n", input[999]);
+//     fprintf(stderr, "in[1001]: %f\n", input[1000]);
+    
+//     for(peak = 0; peak < PEAKS->nPk; = hamsam) {
+//         start = PEAKS->LEFT
+//         stop = PEAKS->RIGHT
+
+//         for(i = start; i < stop; i++) {
+//             j=i; jk = j-k; jl = j-l; jkl = j-k-l;
+    
+//     /*   "RESULT = CONDITION  ?     x      :     y      " 
+//             is a compact if-else statment, "ternary operator" */
+//             vj   = (j   >= 0) ? input[j]   : input[idx1];
+//             vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
+//             vjl  = (jl  >= 0) ? input[jl]  : input[idx1];
+//             vjkl = (jkl >= 0) ? input[jkl] : input[idx1];
+
+//             dkl = vj - vjk - vjl + vjkl;
+//             pp = pp + dkl;
+
+//             if(M >= 0.0) {
+//                 s = s + pp + dkl * M;
+//             }
+            
+//             else { /* infinite decay time, so the input is a step function */
+//                 s = s + dkl;
+//             }
+            
+//             filter[i] = s / (fabs(M) * (double)k);
+//         }
+//     }
+// }
 
 void trapezoid(float * input, float * filter, size_t length, size_t k, size_t l, double M)
 {

@@ -5,7 +5,7 @@ import h5py
 
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
 # These functions are too slow when implemented in pure Python.
-from ctypes import *
+from ctypes import * 
 import numpy.ctypeslib as npct
 
 # plotting tools
@@ -24,14 +24,85 @@ import warnings
 warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
 
 # define Numpy pointer types for passing arrays between C and Python
+
+# still haven't investigated this versus POINTER or byref() methods
+# also provided by ctypes. the POINTER may allowed continued use in python
+# if we want to pass the same exact reference again after modification?
 float_ptr = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
 sizet_ptr = npct.ndpointer(c_ulong, ndim=1, flags='CONTIGUOUS')
 double_ptr = npct.ndpointer(c_double, ndim=1, flags='CONTIGUOUS')
 
+c_ulong_p = POINTER(c_ulong)
+c_double_p = POINTER(c_double)
 # make a peak Ctypes structure for trapezoidal filtering. "Structure" is from Ctypes.
-class PEAK(Structure):
-	_fields_ = [("nPk", c_ulong), ("LEFT", sizet_ptr), ("RIGHT", sizet_ptr),
-				("l", sizet_ptr), ("k", sizet_ptr), ("M", double_ptr)]
+# this will be a simple first pass for peaks that are not in very close proximity, e.g. peaks 
+# that finish decaying completely before the next peak so that there's no stacking of their
+# responses.
+# class SHAPER(Structure):
+# 	_fields_ = [
+# 							]
+
+class peaks_t(Structure):
+	_fields_ = [("nPk", c_ulong), ("LEFT", c_ulong_p), ("RIGHT", c_ulong_p),
+				("l", c_ulong_p), ("k", c_ulong_p), ("M", c_double_p)]
+
+def send_arr(): 
+
+	### note, for ctypes built in types... c_double and c_double() are different.
+	### c_double() is an instance of a type, c_double is the datatype as an 'adjective'.
+
+	# c_ulong_p = POINTER((c_ulong * 3))
+	c_ulong_p = POINTER(c_ulong)
+	data = np.array([743874432,55324234555,4434235689], dtype=c_ulong)
+	data_p = data.ctypes.data_as(c_ulong_p)
+
+
+	lib = CDLL("shaper.so")
+	lib.read_arr.argtypes = [c_ulong_p]
+	lib.read_arr(data_p)
+
+def send_peak(): 
+
+	# make some data
+	nPk = c_ulong(3)
+	LEFT = (np.array([1,4,77777], dtype = c_ulong))
+	RIGHT = (np.array([5,333,89543], dtype = c_ulong))
+	l = (np.array([444,555,8956666], dtype = c_ulong))
+	k = (np.array([11,22,3333], dtype = c_ulong))
+	M = (np.array([5.09,-333.67,895.44456], dtype = c_double))
+	 
+ 	# make pointers for ctypes
+	LEFT_p = LEFT.ctypes.data_as(c_ulong_p)
+	RIGHT_p = RIGHT.ctypes.data_as(c_ulong_p)
+	l_p = l.ctypes.data_as(c_ulong_p)
+	k_p = k.ctypes.data_as(c_ulong_p)
+	M_p = M.ctypes.data_as(c_double_p)
+
+ 	peak = peaks_t(nPk, LEFT_p, RIGHT_p, l_p, k_p, M_p)
+
+	lib = CDLL("shaper.so")
+	lib.read_struct.restype = None
+ 	# 					  # 	  in 		out   	 length  	l  		k 		  M
+	lib.read_struct.argtypes = [POINTER(peaks_t)]
+
+	lib.read_struct(byref(peak))
+
+# def make structure(): 
+
+
+
+def new_test(pixel, fit_length):
+
+	# let's input the peak parameters and locations manually for one channel, see if we can get the filtering right in C.
+	# compare results with a generic shaping filter and a filter for each of the peaks applied to the whole dataset, to make
+	# sure the recursive filter is stable enough when having its parameters switched on the fly.
+
+	
+	infile = '../data_TM1x1/out22_dmux.h5'
+	raw = pull_one(infile, pixel)
+	filt = savgol_scipy(raw, 15, 4)
+	peaks = img_der(filt, raw_ax)
+
 
 def test(pixel, pk, fit_length, l, k):
 
@@ -103,6 +174,7 @@ def test(pixel, pk, fit_length, l, k):
 	fig3.show() # plot trapezoidal filter response to pulse
 
 	# now let's iterate through the peaks and filter them with their appropriate time constants
+
 
  # demux and pre_shaper are pre-processing functions, applied to all data.
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -180,6 +252,9 @@ def test_savgol():
 def savgol_gsl(data, order, der, window):
 	# apply savitsky-golay 'least squares' filter to a numpy array, return the
 	# numpy array for quick analysis.
+
+	# gsl only suppors LU decomposition for double data type(np.float64()), unfortunately.
+	# we could cast the data to float32 and get some error...?
 	test = npct.ndpointer(npct.as_ctypes(np.float32()))
 	lib = CDLL("filters.so")
 
@@ -209,9 +284,6 @@ def shaper_np(data, l, k, M):
 	
 	return np.array(filt)
 
-def setup():
-
-	loc 
 
 def savgol_scipy(array, npt, order):
 	
