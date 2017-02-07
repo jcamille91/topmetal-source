@@ -191,8 +191,12 @@ int HDF5IO(read_waveform_attribute_in_file_header)(
     return (int)ret;
 }
 
+/* having trouble making the types for writing conditional, so to modify types change:
+the datatype used in the write_event_create_dataset macro and the datatype and buffer pointer
+types in the write command at the end of the function. */
+
 int HDF5IO(write_event)(struct HDF5IO(waveform_file) *wavFile,
-                        struct HDF5IO(waveform_event) *wavEvent)
+                        struct HDF5IO(waveform_event) *wavEvent, int dtype)
 {
     char buf[NAME_BUF_SIZE];
     herr_t ret;
@@ -200,14 +204,14 @@ int HDF5IO(write_event)(struct HDF5IO(waveform_file) *wavFile,
     hid_t rootGid, chSid, chPid, chTid, chDid;
     hid_t mSid;
     hsize_t dims[2], h5chunkDims[2], slabOff[2], mOff[2], slabDims[2];
-    
+
     chunkId = wavEvent->eventId / wavFile->nWfmPerChunk;
     inChunkId = wavEvent->eventId % wavFile->nWfmPerChunk;
 
     snprintf(buf, NAME_BUF_SIZE, "C%zd", chunkId);
     rootGid = H5Gopen(wavFile->waveFid, "/", H5P_DEFAULT);
 
-#define write_event_create_dataset                          \
+#define write_event_create_dataset                   \
     do {                                                    \
         dims[0] = wavFile->nCh;                             \
         dims[1] = wavFile->nPt * wavFile->nWfmPerChunk;     \
@@ -218,8 +222,15 @@ int HDF5IO(write_event)(struct HDF5IO(waveform_file) *wavFile,
         chPid = H5Pcreate(H5P_DATASET_CREATE);              \
         H5Pset_chunk(chPid, 2, h5chunkDims);                \
         /* H5Pset_deflate(chPid, 6); */                     \
-                                                            \
-        chTid = H5Tcopy(SCOPE_DATA_HDF5_TYPE_DOUBLE);       \
+        if(dtype == 2) {                                    \
+            chTid = H5Tcopy(SCOPE_DATA_HDF5_TYPE_DOUBLE);   \
+        }                                                   \
+        else if(dtype == 1){                                \
+            chTid = H5Tcopy(SCOPE_DATA_HDF5_TYPE_FLOAT);    \
+        }                                                   \
+        else {                                              \
+            chTid = H5Tcopy(SCOPE_DATA_HDF5_TYPE_INT);      \
+        }                                                   \
         chDid = H5Dcreate(rootGid, buf, chTid, chSid,       \
                           H5P_DEFAULT, chPid, H5P_DEFAULT); \
                                                             \
@@ -252,10 +263,19 @@ int HDF5IO(write_event)(struct HDF5IO(waveform_file) *wavFile,
     mOff[0] = 0;
     mOff[1] = 0;
     H5Sselect_hyperslab(mSid, H5S_SELECT_SET, mOff, NULL, slabDims, NULL);
-    
+    if(dtype ==2) {
     ret = H5Dwrite(chDid, SCOPE_DATA_HDF5_TYPE_DOUBLE, mSid, chSid, H5P_DEFAULT,
-                   wavEvent->wavBufD);
-
+                       wavEvent->wavBufD);
+    }
+    else if (dtype == 1){
+    ret = H5Dwrite(chDid, SCOPE_DATA_HDF5_TYPE_FLOAT, mSid, chSid, H5P_DEFAULT,
+                       wavEvent->wavBufF);    
+    }
+    else {
+    ret = H5Dwrite(chDid, SCOPE_DATA_HDF5_TYPE_INT, mSid, chSid, H5P_DEFAULT,
+                       wavEvent->wavBufI);    
+    }
+    
     wavFile->nEvents++;
 
     H5Sclose(mSid);
@@ -265,8 +285,154 @@ int HDF5IO(write_event)(struct HDF5IO(waveform_file) *wavFile,
     return (int)ret;
 }
 
-int HDF5IO(read_event_int)(struct HDF5IO(waveform_file) *wavFile,
-                       struct HDF5IO(waveform_event) *wavEvent)
+// int HDF5IO(write_event_float)(struct HDF5IO(waveform_file) *wavFile,
+//                         struct HDF5IO(waveform_event) *wavEvent)
+// {
+//     char buf[NAME_BUF_SIZE];
+//     herr_t ret;
+//     size_t chunkId, inChunkId;
+//     hid_t rootGid, chSid, chPid, chTid, chDid;
+//     hid_t mSid;
+//     hsize_t dims[2], h5chunkDims[2], slabOff[2], mOff[2], slabDims[2];
+
+//     chunkId = wavEvent->eventId / wavFile->nWfmPerChunk;
+//     inChunkId = wavEvent->eventId % wavFile->nWfmPerChunk;
+
+//     snprintf(buf, NAME_BUF_SIZE, "C%zd", chunkId);
+//     rootGid = H5Gopen(wavFile->waveFid, "/", H5P_DEFAULT);
+
+// #define write_event_create_dataset                   \
+//     do {                                                    \
+//         dims[0] = wavFile->nCh;                             \
+//         dims[1] = wavFile->nPt * wavFile->nWfmPerChunk;     \
+//         h5chunkDims[0] = 1;                                 \
+//         h5chunkDims[1] = wavFile->nPt;                      \
+//                                                             \
+//         chSid = H5Screate_simple(2, dims, NULL);            \
+//         chPid = H5Pcreate(H5P_DATASET_CREATE);              \
+//         H5Pset_chunk(chPid, 2, h5chunkDims);                \
+//         /* H5Pset_deflate(chPid, 6); */                     \
+//         chTid = H5Tcopy(SCOPE_DATA_HDF5_TYPE_FLOAT);        \
+//         chDid = H5Dcreate(rootGid, buf, chTid, chSid,       \
+//                           H5P_DEFAULT, chPid, H5P_DEFAULT); \
+//         H5Tclose(chTid);                                    \
+//         H5Pclose(chPid);                                    \
+//     } while(0)
+
+//     if(inChunkId == 0) { /* need to create a new chunk */
+//         write_event_create_dataset;
+//     } else {
+//         chDid = H5Dopen(rootGid, buf, H5P_DEFAULT);
+//         if(chDid < 0) { /* need to create a new chunk */
+//             /* This is not a neat way to do it.  One may check out
+//              * H5Lexists() and try to utilize that function.  Its
+//              * efficiency is not verified though. */
+//             write_event_create_dataset;
+//         } else {
+//             chSid = H5Dget_space(chDid);
+//         }
+//     }
+// #undef write_event_create_dataset
+
+//     slabOff[0] = 0;
+//     slabOff[1] = inChunkId * wavFile->nPt;
+//     slabDims[0] = wavFile->nCh;
+//     slabDims[1] = wavFile->nPt;
+//     H5Sselect_hyperslab(chSid, H5S_SELECT_SET, slabOff, NULL, slabDims, NULL);
+
+//     mSid = H5Screate_simple(2, slabDims, NULL);
+//     mOff[0] = 0;
+//     mOff[1] = 0;
+//     H5Sselect_hyperslab(mSid, H5S_SELECT_SET, mOff, NULL, slabDims, NULL);
+    
+//     ret = H5Dwrite(chDid, SCOPE_DATA_HDF5_TYPE_FLOAT, mSid, chSid, H5P_DEFAULT,
+//                        wavEvent->wavBufF);
+
+//     wavFile->nEvents++;
+
+//     H5Sclose(mSid);
+//     H5Sclose(chSid);
+//     H5Dclose(chDid);
+//     H5Gclose(rootGid);
+//     return (int)ret;
+// }
+
+
+// int HDF5IO(write_event_int)(struct HDF5IO(waveform_file) *wavFile,
+//                         struct HDF5IO(waveform_event) *wavEvent)
+// {
+//     char buf[NAME_BUF_SIZE];
+//     herr_t ret;
+//     size_t chunkId, inChunkId;
+//     hid_t rootGid, chSid, chPid, chTid, chDid;
+//     hid_t mSid;
+//     hsize_t dims[2], h5chunkDims[2], slabOff[2], mOff[2], slabDims[2];
+
+//     chunkId = wavEvent->eventId / wavFile->nWfmPerChunk;
+//     inChunkId = wavEvent->eventId % wavFile->nWfmPerChunk;
+
+//     snprintf(buf, NAME_BUF_SIZE, "C%zd", chunkId);
+//     rootGid = H5Gopen(wavFile->waveFid, "/", H5P_DEFAULT);
+
+// #define write_event_create_dataset                   \
+//     do {                                                    \
+//         dims[0] = wavFile->nCh;                             \
+//         dims[1] = wavFile->nPt * wavFile->nWfmPerChunk;     \
+//         h5chunkDims[0] = 1;                                 \
+//         h5chunkDims[1] = wavFile->nPt;                      \
+//                                                             \
+//         chSid = H5Screate_simple(2, dims, NULL);            \
+//         chPid = H5Pcreate(H5P_DATASET_CREATE);              \
+//         H5Pset_chunk(chPid, 2, h5chunkDims);                \
+//         /* H5Pset_deflate(chPid, 6); */                     \
+//         chTid = H5Tcopy(SCOPE_DATA_HDF5_TYPE_INT);          \
+//         chDid = H5Dcreate(rootGid, buf, chTid, chSid,       \
+//                           H5P_DEFAULT, chPid, H5P_DEFAULT); \
+//                                                             \
+//         H5Tclose(chTid);                                    \
+//         H5Pclose(chPid);                                    \
+//     } while(0)
+
+//     if(inChunkId == 0) { /* need to create a new chunk */
+//         write_event_create_dataset;
+//     } else {
+//         chDid = H5Dopen(rootGid, buf, H5P_DEFAULT);
+//         if(chDid < 0) { /* need to create a new chunk */
+//             /* This is not a neat way to do it.  One may check out
+//              * H5Lexists() and try to utilize that function.  Its
+//              * efficiency is not verified though. */
+//             write_event_create_dataset;
+//         } else {
+//             chSid = H5Dget_space(chDid);
+//         }
+//     }
+// #undef write_event_create_dataset
+
+//     slabOff[0] = 0;
+//     slabOff[1] = inChunkId * wavFile->nPt;
+//     slabDims[0] = wavFile->nCh;
+//     slabDims[1] = wavFile->nPt;
+//     H5Sselect_hyperslab(chSid, H5S_SELECT_SET, slabOff, NULL, slabDims, NULL);
+
+//     mSid = H5Screate_simple(2, slabDims, NULL);
+//     mOff[0] = 0;
+//     mOff[1] = 0;
+//     H5Sselect_hyperslab(mSid, H5S_SELECT_SET, mOff, NULL, slabDims, NULL);
+    
+//     ret = H5Dwrite(chDid, SCOPE_DATA_HDF5_TYPE_INT, mSid, chSid, H5P_DEFAULT,
+//                        wavEvent->wavBufI);
+
+//     wavFile->nEvents++;
+
+//     H5Sclose(mSid);
+//     H5Sclose(chSid);
+//     H5Dclose(chDid);
+//     H5Gclose(rootGid);
+//     return (int)ret;
+// }
+
+int HDF5IO(read_event)(struct HDF5IO(waveform_file) *wavFile,
+                       struct HDF5IO(waveform_event) *wavEvent, int dtype)
 {
     char buf[NAME_BUF_SIZE];
     herr_t ret;
@@ -274,7 +440,7 @@ int HDF5IO(read_event_int)(struct HDF5IO(waveform_file) *wavFile,
     hid_t chSid, chDid;
     hid_t mSid;
     hsize_t slabOff[2], mOff[2], slabDims[2];
-    
+
     chunkId = wavEvent->eventId / wavFile->nWfmPerChunk;
     inChunkId = wavEvent->eventId % wavFile->nWfmPerChunk;
 
@@ -293,51 +459,63 @@ int HDF5IO(read_event_int)(struct HDF5IO(waveform_file) *wavFile,
     mOff[1] = 0;
     H5Sselect_hyperslab(mSid, H5S_SELECT_SET, mOff, NULL, slabDims, NULL);
     
-    ret = H5Dread(chDid, SCOPE_DATA_HDF5_TYPE_INT, mSid, chSid, H5P_DEFAULT,
-                  wavEvent->wavBufI);
-   
+    if(dtype == 2) {      // double datatype
+        ret = H5Dread(chDid, SCOPE_DATA_HDF5_TYPE_DOUBLE, mSid, chSid, H5P_DEFAULT,
+                      wavEvent->wavBufD);        
+    }
+
+    else if(dtype == 1) { // float datatype
+        ret = H5Dread(chDid, SCOPE_DATA_HDF5_TYPE_FLOAT, mSid, chSid, H5P_DEFAULT,
+                      wavEvent->wavBufF);
+    }
+
+    else {                 // int datatype
+        ret = H5Dread(chDid, SCOPE_DATA_HDF5_TYPE_INT, mSid, chSid, H5P_DEFAULT,
+                      wavEvent->wavBufI);
+    }
+
     H5Sclose(mSid);
     H5Sclose(chSid);
     H5Dclose(chDid);
     return (int)ret;
 }
 
-int HDF5IO(read_event_double)(struct HDF5IO(waveform_file) *wavFile,
-                       struct HDF5IO(waveform_event) *wavEvent)
-{
-    char buf[NAME_BUF_SIZE];
-    herr_t ret;
-    size_t chunkId, inChunkId;
-    hid_t chSid, chDid;
-    hid_t mSid;
-    hsize_t slabOff[2], mOff[2], slabDims[2];
+// int HDF5IO(read_event_float)(struct HDF5IO(waveform_file) *wavFile,
+//                        struct HDF5IO(waveform_event_float) *wavEvent)
+// {
+//     char buf[NAME_BUF_SIZE];
+//     herr_t ret;
+//     size_t chunkId, inChunkId;
+//     hid_t chSid, chDid;
+//     hid_t mSid;
+//     hsize_t slabOff[2], mOff[2], slabDims[2];
     
-    chunkId = wavEvent->eventId / wavFile->nWfmPerChunk;
-    inChunkId = wavEvent->eventId % wavFile->nWfmPerChunk;
+//     chunkId = wavEvent->eventId / wavFile->nWfmPerChunk;
+//     inChunkId = wavEvent->eventId % wavFile->nWfmPerChunk;
 
-    snprintf(buf, NAME_BUF_SIZE, "/C%zd", chunkId);
-    chDid = H5Dopen(wavFile->waveFid, buf, H5P_DEFAULT);
-    chSid = H5Dget_space(chDid);
+//     snprintf(buf, NAME_BUF_SIZE, "/C%zd", chunkId);
+//     chDid = H5Dopen(wavFile->waveFid, buf, H5P_DEFAULT);
+//     chSid = H5Dget_space(chDid);
 
-    slabOff[0] = 0;
-    slabOff[1] = inChunkId * wavFile->nPt;
-    slabDims[0] = wavFile->nCh;
-    slabDims[1] = wavFile->nPt;
-    H5Sselect_hyperslab(chSid, H5S_SELECT_SET, slabOff, NULL, slabDims, NULL);
+//     slabOff[0] = 0;
+//     slabOff[1] = inChunkId * wavFile->nPt;
+//     slabDims[0] = wavFile->nCh;
+//     slabDims[1] = wavFile->nPt;
+//     H5Sselect_hyperslab(chSid, H5S_SELECT_SET, slabOff, NULL, slabDims, NULL);
 
-    mSid = H5Screate_simple(2, slabDims, NULL);
-    mOff[0] = 0;
-    mOff[1] = 0;
-    H5Sselect_hyperslab(mSid, H5S_SELECT_SET, mOff, NULL, slabDims, NULL);
+//     mSid = H5Screate_simple(2, slabDims, NULL);
+//     mOff[0] = 0;
+//     mOff[1] = 0;
+//     H5Sselect_hyperslab(mSid, H5S_SELECT_SET, mOff, NULL, slabDims, NULL);
    
-    ret = H5Dread(chDid, SCOPE_DATA_HDF5_TYPE_DOUBLE, mSid, chSid, H5P_DEFAULT,
-                  wavEvent->wavBufD);    
+//     ret = H5Dread(chDid, SCOPE_DATA_HDF5_TYPE_FLOAT, mSid, chSid, H5P_DEFAULT,
+//                   wavEvent->wavBuf);    
 
-    H5Sclose(mSid);
-    H5Sclose(chSid);
-    H5Dclose(chDid);
-    return (int)ret;
-}
+//     H5Sclose(mSid);
+//     H5Sclose(chSid);
+//     H5Dclose(chDid);
+//     return (int)ret;
+// }
 
 size_t HDF5IO(get_number_of_events)(struct HDF5IO(waveform_file) *wavFile)
 {
@@ -350,6 +528,7 @@ size_t HDF5IO(get_number_of_events)(struct HDF5IO(waveform_file) *wavFile)
     rootGid = H5Gopen(wavFile->waveFid, "/", H5P_DEFAULT);
     ret = H5Gget_info(rootGid, &rootGinfo);
     nEvents = rootGinfo.nlinks;
+
     H5Gclose(rootGid);
     return nEvents;
     */

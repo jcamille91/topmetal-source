@@ -8,8 +8,7 @@ dt = 3.2*10**(-8)      # for TM1x1
 # nPt = 256*1024**2/16 # for TM1x8, 256MB, 2 byte datapoints. 
 nPt = 2**30/2 		   # for TM1x1, 1 GB, 2 byte datapoints.
 
-frameSize = 4*72**2
-nCh = 1
+frameSize = 4*(72**2)
 mChSpl = 4
 mStart = 913
 nFrame = (nPt-mStart)/frameSize
@@ -22,12 +21,12 @@ channel = 0
 
 
 # step function to test the trapezoidal filter algorithm
-a = np.ones(nFrame/2, dtype=np.int16)*(-12000)
-b = np.ones(nFrame/2, dtype=np.int16)*(-14000)
+a = np.ones(nFrame/2, dtype=np.int16)*(-11111)
+b = np.ones(nFrame/2, dtype=np.int16)*(-12121)
 step = np.concatenate([a,b])
 
 # file to be written to
-file = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/exp.h5'
+file = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/dtest.h5'
 
 # open hdf5 file for read/write
 f = h5py.File(file, "r+")
@@ -38,6 +37,8 @@ C = C_raw[channel]
 # input the fake data so it's as if it had been time multiplexed
 # like real data is by the system ADC every clock cycle
 
+# every pixel in a frame gets 4 (mChSpl many) datapoints.
+# offset by the pixel location and number of frames deep
 for i in np.arange(nFrame):
    index_pixel = mStart + mChSpl*pixel + frameSize*i
    for j in np.arange(mChSpl):

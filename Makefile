@@ -52,17 +52,22 @@ ifeq ($(ARCH), ppc970)
   CFLAGS += -m64
 endif
 ############################ Define targets ###################################
-EXE_TARGETS = demux shaper
+#EXE_TARGETS = demux shaper
 DEBUG_EXE_TARGETS = hdf5rawWaveformIo
-SHLIB_TARGETS = H5SHLIB.so demux.so shaper.so filters.so
-O_TARGETS = hdf5rawWaveformIo.o demux.o shaper.o filters.o
+SHLIB_TARGETS = H5SHLIB.so demux.so 
+#demux_dbl.so demux_flt.so
+#demux.so shaper.so filters.so
+O_TARGETS = hdf5rawWaveformIo.o demux.o
+#demux_dbl.o demux_flt.o
+#demux.o shaper.o filters.o
 
 ifeq ($(ARCH), x86_64) # compile a 32bit version on 64bit platforms
   # SHLIB_TARGETS += XXX_m32$(SHLIB_EXT)
 endif
 
-.PHONY: exe_targets shlib_targets debug_exe_targets o_targets clean
-exe_targets: $(EXE_TARGETS)
+.PHONY: shlib_targets debug_exe_targets o_targets clean
+#.PHONY: exe_targets shlib_targets debug_exe_targets o_targets clean
+#exe_targets: $(EXE_TARGETS)
 shlib_targets: $(SHLIB_TARGETS)
 debug_exe_targets: $(DEBUG_EXE_TARGETS)
 o_targets: $(O_TARGETS)
@@ -75,6 +80,8 @@ o_targets: $(O_TARGETS)
 hdf5rawWaveformIo.o: hdf5rawWaveformIo.c hdf5rawWaveformIo.h common.h
 hdf5rawWaveformIo: hdf5rawWaveformIo.c hdf5rawWaveformIo.h
 	$(CC) $(CFLAGS) $(INCLUDE) -DHDF5RAWWAVEFORMIO_DEBUG_ENABLEMAIN $< $(LIBS) $(LDFLAGS) -o $@
+demux_flt.o: demux_flt.c hdf5rawWaveformIo.o
+demux_dbl.o: demux_dbl.c hdf5rawWaveformIo.o
 demux.o: demux.c hdf5rawWaveformIo.o
 demux: demux.c hdf5rawWaveformIo.o
 	$(CC) $(CFLAGS) $(INCLUDE) $^ $(LIBS) $(LDFLAGS) -o $@
@@ -86,6 +93,10 @@ filters.so: filters.o hdf5rawWaveformIo.o
 	$(CC) $^ $(SHLIB_CFLAGS) $(INCLUDE) -o filters.so $(LIBS)
 H5SHLIB.so: hdf5rawWaveformIo.o
 	$(CC) hdf5rawWaveformIo.o $(SHLIB_CFLAGS) $(INCLUDE) -o H5SHLIB.so $(LIBS)
+demux_flt.so: demux_flt.o hdf5rawWaveformIo.o
+	$(CC) $^ $(SHLIB_CFLAGS) $(INCLUDE) -o demux_flt.so $(LIBS)	
+demux_dbl.so: demux_dbl.o hdf5rawWaveformIo.o
+	$(CC) $^ $(SHLIB_CFLAGS) $(INCLUDE) -o demux_dbl.so $(LIBS)	
 demux.so: demux.o hdf5rawWaveformIo.o
 	$(CC) $^ $(SHLIB_CFLAGS) $(INCLUDE) -o demux.so $(LIBS)
 shaper.so: shaper.o hdf5rawWaveformIo.o

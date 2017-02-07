@@ -34,11 +34,11 @@ with h5py.File(file_name,'r') as hf:
 samples = np.linspace(0, len(np_data[0])-1, len(np_data[0]))
 
 if dump :
-	for i in range(0,200000):
+	for i in range(0,20000):
 	   print i, np_data[channel][i]
 
 if plot :
-	plt.step(samples[:200000], np_data[channel][:200000])
+	plt.step(samples[:30000], np_data[channel][:30000])
 	axes = plt.gca()
 	plt.grid()
 	plt.show()  

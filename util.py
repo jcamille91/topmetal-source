@@ -38,6 +38,8 @@ class peaks_t(Structure):
 
 def	pk_hdl(nPk, left, right, l, k, M):
 
+	# this function converts numpy arrays into the appropriate 
+	# pointers for the peaks_t structure
 	nPk = c_ulong(nPk)
 	left_p = left.ctypes.data_as(c_ulong_p)
 	right_p = right.ctypes.data_as(c_ulong_p)
@@ -47,25 +49,21 @@ def	pk_hdl(nPk, left, right, l, k, M):
 
 	return peaks_t(nPk, left_p, right_p, l_p, k_p, M_p)
 
-
-def new_test(pixel, fit_length):
-
-	# let's input the peak parameters and locations manually for one channel, see if we can get the filtering right in C.
-	# compare results with a generic shaping filter and a filter for each of the peaks applied to the whole dataset, to make
-	# sure the recursive filter is stable enough when having its parameters switched on the fly.
-
-	
-	infile = '../data_TM1x1/out22_dmux.h5'
-	raw = pull_one(infile, pixel)
-	filt = savgol_scipy(raw, 15, 4)
-	peaks = img_der(filt, raw_ax)
-
-
- # demux and pre_shaper are pre-processing functions, applied to all data.
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
    lib = CDLL("demux.so")
    lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
    lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+
+def demuxD(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
+   lib = CDLL("demux_dbl.so")
+   lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+   lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+
+def demuxF(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
+   lib = CDLL("demux_flt.so")
+   lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+   lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+
 
 def smooth(infile, outfile, l, k, M):
    # apply trapezoidal filter with 'rough parameters' to smooth the dataset so we can search for peaks.
@@ -83,7 +81,7 @@ def savgol_gsl(data, order, der, window):
 	lib = CDLL("filters.so")
 
 	lib.savgol_np.restype = None
-						  # 	  in 		  out   	 length  	order    der 	window
+						  # 	  in 		 out    length   order  der   window
 	lib.savgol_np.argtypes = [float_ptr, float_ptr, c_ulong, c_int, c_int, c_int]
  
 	filt = np.empty_like(data)
@@ -177,7 +175,9 @@ def pull_one(infile, pixel):
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
 		d = hf.get(event)
-		data = np.array(d, dtype=np.float32)
+		#data = np.array(d, dtype=np.float32)
+		data = np.array(d)
+
 
 	return data[pixel]
 
@@ -224,6 +224,5 @@ def signal_plot(infile, pixel):
 	plt.step(samples, data[chpix])
 	axes = plt.gca()
 	plt.grid()
-	plt.show()  
+	plt.show()
 
-#def raw_plot():

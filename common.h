@@ -29,10 +29,12 @@ so nPt = 16 * 33554432 = 536870912
 
 // HDF5 i/o types and name mangling macro
 #define HDF5IO(name) hdf5io_ ## name
-#define SCOPE_DATA_TYPE_INT int16_t
+#define SCOPE_DATA_TYPE_INT int16_t // uint16_t for 1x8 detector, signed int for 1x1 detector
 #define SCOPE_DATA_TYPE_FLOAT float
+#define SCOPE_DATA_TYPE_DOUBLE double
 #define SCOPE_DATA_HDF5_TYPE_INT H5T_NATIVE_INT16
 #define SCOPE_DATA_HDF5_TYPE_FLOAT H5T_NATIVE_FLOAT
+#define SCOPE_DATA_HDF5_TYPE_DOUBLE H5T_NATIVE_DOUBLE
 
 
 struct waveform_attribute

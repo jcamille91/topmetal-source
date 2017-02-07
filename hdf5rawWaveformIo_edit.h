@@ -20,7 +20,8 @@ struct HDF5IO(waveform_event)
     /* wavBuf should point to a contiguous 2D array, mapped as
      * ch1..ch2..ch3..ch4 (row-major).  Omitting one or more ch? is
      * allowed in accordance with chMask.*/
-    SCOPE_DATA_TYPE_INT *wavBufI;
+    SCOPE_DATA_TYPE_INT    *wavBufI;
+    SCOPE_DATA_TYPE_FLOAT  *wavBufF;
     SCOPE_DATA_TYPE_DOUBLE *wavBufD;
 };
 
@@ -29,6 +30,21 @@ struct HDF5IO(waveform_event)
  * array, then the (n+1)th waveform is put into the next grouped
  * array, and so forth. */
 
+// struct HDF5IO(waveform_event_float)
+// {
+//     size_t eventId;
+//      wavBuf should point to a contiguous 2D array, mapped as
+//      * ch1..ch2..ch3..ch4 (row-major).  Omitting one or more ch? is
+//      * allowed in accordance with chMask.
+//     SCOPE_DATA_TYPE_FLOAT *wavBuf;
+// };
+
+// struct HDF5IO(waveform_event_double)
+// {
+//     size_t eventId;
+//     SCOPE_DATA_TYPE_DOUBLE *wavBuf;
+
+// };
 
 struct HDF5IO(waveform_file) *HDF5IO(open_file)(
     const char *fname, size_t nWfmPerChunk,
@@ -45,11 +61,11 @@ int HDF5IO(read_waveform_attribute_in_file_header)(
     struct HDF5IO(waveform_file) *wavFile,
     struct waveform_attribute *wavAttr);
 int HDF5IO(write_event)(struct HDF5IO(waveform_file) *wavFile,
-                        struct HDF5IO(waveform_event) *wavEvent);
-int HDF5IO(read_event_int)(struct HDF5IO(waveform_file) *wavFile,
-                       struct HDF5IO(waveform_event) *wavEvent);
-int HDF5IO(read_event_double)(struct HDF5IO(waveform_file) *wavFile,
-                       struct HDF5IO(waveform_event) *wavEvent);
+                        struct HDF5IO(waveform_event) *wavEvent, int dtype);
+int HDF5IO(read_event)(struct HDF5IO(waveform_file) *wavFile,
+                       struct HDF5IO(waveform_event) *wavEvent, int dtype);
+// int HDF5IO(read_event_float)(struct HDF5IO(waveform_file) *wavFile,
+//                        struct HDF5IO(waveform_event_float) *wavEvent);
 size_t HDF5IO(get_number_of_events)(struct HDF5IO(waveform_file) *wavFile);
 
 #endif /* __HDF5IO_H__ */

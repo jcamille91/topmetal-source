@@ -78,7 +78,7 @@ void read_struct(peaks_t *input){
 
 }
 
-void shaper_peaks(double * input, double * filter, size_t length, peaks_t *PEAKS)
+void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */

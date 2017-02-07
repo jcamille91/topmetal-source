@@ -9,14 +9,20 @@
 #include "common.h"
 #include "hdf5rawWaveformIo.h"
 
+// to change this algorithm for float or double, change the 'OUT_WFM_BASE_TYPE'
+// the int variable 'dtype_out', and the outwfmEvent buffer from wavBufD to wavBufF
+
 typedef SCOPE_DATA_TYPE_INT IN_WFM_BASE_TYPE;
-typedef SCOPE_DATA_TYPE_DOUBLE OUT_WFM_BASE_TYPE;
+typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
 
 // argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
 
 void demux(char *inFileName, char *outFileName, size_t mStart, double mChLen, size_t mNCh, size_t mChOff, size_t mChSpl, double frameSize)
 
 {
+    int dtype_in=0, dtype_out=1;
+    // double=2, float=1, uint16=0
+    
     ssize_t i, j, idx0, idx1, iCh, imCh, iFrame=0;
     size_t wfmOff, nEventsInFile;
     // size_t mStart, mNCh, mChOff, mChSpl; //chGrpLen;
@@ -110,7 +116,6 @@ void demux(char *inFileName, char *outFileName, size_t mStart, double mChLen, si
     mStart = 0;
     //}    
 
-    fprintf(stderr, "wfmOff: %zu\n", wfmOff);
     fprintf(stderr, "mStart: %zu\n", mStart);
     fprintf(stderr, "mChLen: %f\n", mChLen);
     fprintf(stderr, "mNCh: %zu\n", mNCh);
@@ -125,17 +130,13 @@ void demux(char *inFileName, char *outFileName, size_t mStart, double mChLen, si
     outWfmAttr.nFrames = 0;
     hdf5io_write_waveform_attribute_in_file_header(outWfmFile, &outWfmAttr);
 
-    /* here, allocate adequate memory for the input and output arrays. this is determined by the 
-     the length of each array, and each array's respective data type. Then, have the pointers in the 
-     wavEvent structures point to these chunks of memory. */
-
     inWfmBuf = (IN_WFM_BASE_TYPE*)malloc(inWfmFile->nPt * inWfmFile->nCh * sizeof(IN_WFM_BASE_TYPE));
-    inWfmEvent.wavBufI = inWfmBuf;
+    inWfmEvent.wavBufI = inWfmBuf; // int type buffer
     outWfmBuf = (OUT_WFM_BASE_TYPE*)malloc(outWfmFile->nPt * outWfmFile->nCh * sizeof(OUT_WFM_BASE_TYPE));
-    outWfmEvent.wavBufD = outWfmBuf;
+    outWfmEvent.wavBufF = outWfmBuf; // double type buffer
     
     for(inWfmEvent.eventId = 0; inWfmEvent.eventId < 1; inWfmEvent.eventId++) {
-        hdf5io_read_event_int(inWfmFile, &inWfmEvent);
+        hdf5io_read_event(inWfmFile, &inWfmEvent, dtype_in);
         for(iCh=0; iCh < inWfmFile->nCh; iCh++) {
             for(iFrame = 0; iFrame < MAX(inWfmAttr.nFrames, 1); iFrame++) {
                 for(i=mStart; i < MIN(frameSize, mStart + mNCh * mChLen); i++) {
@@ -167,7 +168,7 @@ void demux(char *inFileName, char *outFileName, size_t mStart, double mChLen, si
         }
         
         outWfmEvent.eventId = inWfmEvent.eventId;
-        hdf5io_write_event(outWfmFile, &outWfmEvent);
+        hdf5io_write_event(outWfmFile, &outWfmEvent, dtype_out);
         hdf5io_flush_file(outWfmFile);
     }
 

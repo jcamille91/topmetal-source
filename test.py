@@ -1,4 +1,59 @@
-import util as u
+from util import *
+
+def dmux_input():
+
+
+	# let's input a known signal to see if the demux is working.
+
+	# ok... was the problem the file name? 
+	# doesn't really add up but seems to work now...
+	fig, ax = plt.subplots(1,1)
+	infile = '../data_TM1x1/dtest.h5'
+	outfile = '../data_TM1x1/stepdmuxD.h5'
+	pixel = 2093
+	mStart = 913
+	mChLen = 4
+	mNCh = 72**2
+	mChOff = 1
+	mChSpl = 2
+	frameSize = (72**2)*4
+
+	demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize)
+	d = pull_one(outfile, pixel)
+	plot(d, ax)
+	fig.show()
+
+def dmux_comp():
+
+	# plot the old float version + the new float/double versions
+
+	# seems likely we used a different m-start for the old dmux file, out22_dmux.h5.
+	# could compare to mstart =912 instead of =913, but the data looks reasonable/physical
+
+	fig1, ax1 = plt.subplots(1,1)
+	fig2, ax2 = plt.subplots(1,1)
+
+	pixel = 100
+	infile = '../data_TM1x1/out22.h5'
+	out = '../data_TM1x1/demuxdouble.h5'
+	old = '../data_TM1x1/out22_dmux.h5'
+	mStart = 913 # by counting backwards should be 912.....
+	mChLen = 4
+	mNCh = 72**2
+	mChOff = 1
+	mChSpl = 2
+	frameSize = (72**2)*4
+
+	demux(infile, out, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize)
+
+	d = pull_one(out, pixel)
+	o = pull_one(old, pixel)
+
+	plot(d, ax1)
+	plot(o, ax2)
+
+	fig1.show()
+	fig2.show()
 
 def send_arr(): 
 
@@ -19,19 +74,11 @@ def send_struct():
 	l = (np.array([444,555,8956666], dtype = c_ulong))
 	k = (np.array([11,22,3333], dtype = c_ulong))
 	M = (np.array([5.09,-333.67,895.44456], dtype = c_double))
-	 
- 	# make pointers for ctypes
-	LEFT_p = LEFT.ctypes.data_as(c_ulong_p)
-	RIGHT_p = RIGHT.ctypes.data_as(c_ulong_p)
-	l_p = l.ctypes.data_as(c_ulong_p)
-	k_p = k.ctypes.data_as(c_ulong_p)
-	M_p = M.ctypes.data_as(c_double_p)
 
- 	peak = u.peaks_t(nPk, LEFT_p, RIGHT_p, l_p, k_p, M_p)
+ 	peak = pk_hdl(nPk, LEFT, RIGHT, l, k, M)
 
 	lib = CDLL("shaper.so")
 	lib.read_struct.restype = None
- 	# 					  # 	  in 		out   	 length  	l  		k 		  M
 	lib.read_struct.argtypes = [POINTER(peaks_t)]
 
 	lib.read_struct(byref(peak))
@@ -44,26 +91,26 @@ def send_peaks():
 	fig2, axis2 = plt.subplots(1,1)
 
 	# build an array with some exponentials with known time constants
-	exp = np.ones(100000, dtype=c_double)*0.828
-	exp[10000:20000] += 0.01*np.exp(-(1/40.)*np.linspace(0, 9999,10000))	
-	exp[50000:60000] += 0.008*np.exp(-(1/70.)*np.linspace(0, 9999,10000))
-	exp[80000:90000] += 0.011*np.exp(-(1/100.)*np.linspace(0, 9999,10000))
+	exp = np.ones(10000, dtype=c_double)*0.828
+	exp[1000:2000] += 0.01*np.exp(-(1.0/40)*np.linspace(0, 999,1000))	
+	exp[5000:6000] += 0.008*np.exp(-(1.0/70)*np.linspace(0, 999,1000))
+	exp[8000:9000] += 0.011*np.exp(-(1.0/100)*np.linspace(0, 999,1000))
 
-	LEFT = (np.array([0,30000,70000], dtype = c_ulong))
-	RIGHT = (np.array([30000,70000,len(exp)-1], dtype = c_ulong))
-	l = (np.array([25,25,25], dtype = c_ulong))
-	k = (np.array([10,10,10], dtype = c_ulong))
+	LEFT = (np.array([0,3000,7000], dtype = c_ulong))
+	RIGHT = (np.array([3000,7000,len(exp)-1], dtype = c_ulong))
+	l = (np.array([100,100,100], dtype = c_ulong))
+	k = (np.array([20,20,20], dtype = c_ulong))
 	M = (np.array([40.0,70.0,100.0], dtype = c_double))
 
-	PEAK = u.pk_hdl(len(LEFT), LEFT, RIGHT, l, k, M)
+	PEAK = pk_hdl(len(LEFT), LEFT, RIGHT, l, k, M)
 	out = np.empty_like(exp)
 	lib = CDLL("shaper.so")
 	lib.shaper_peaks.restype = None
 	lib.shaper_peaks.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t)]
 	lib.shaper_peaks(exp, out, c_ulong(len(exp)), byref(PEAK))
-	axis2.axis([0, 99999,0, 0.012])
-	u.plot(exp, axis)
-	u.plot(out, axis2)
+	axis2.axis([0, 9999,0, 0.012])
+	plot(exp, axis)
+	plot(out, axis2)
 	fig.show()
 	fig2.show()
 
@@ -75,14 +122,14 @@ def test(pixel, pk, fit_length, l, k):
 
 	fig1, raw_ax = plt.subplots(1,1)
 
-	raw = u.pull_one(infile, pixel)
-	u.plot(raw, raw_ax) # plot the raw data
+	raw = pull_one(infile, pixel)
+	plot(raw, raw_ax) # plot the raw data
 
-	filt = u.savgol_scipy(raw, 15, 4)
+	filt = savgol_scipy(raw, 15, 4)
 	#filt = savgol_gsl(raw, 4, 0, 15)
-	u.plot(filt, raw_ax) # plot the smoothed data
+	plot(filt, raw_ax) # plot the smoothed data
 
-	peaks = u.img_der(filt, raw_ax) # plot peak locations
+	peaks = img_der(filt, raw_ax) # plot peak locations
 	#peaks = peakdet_cwt(filt, axis[0,0])    # plot peak locations
 
 
@@ -111,7 +158,7 @@ def test(pixel, pk, fit_length, l, k):
 	print 'amplitude:', 1000*par[0], 'mV'
 	print 'offset:', 1000*par[2], 'mV'
 
-	u.plot(pulse, fit_ax)
+	plot(pulse, fit_ax)
 
 	fit_ax.scatter(x,model_func(x,*par), marker = 'o')
 
@@ -127,9 +174,9 @@ def test(pixel, pk, fit_length, l, k):
 	# k = 10
 	window = 100
 	shp_in = raw[peaks[pk]-window:peaks[pk]+fit_length+window]
-	trap = u.shaper_np(shp_in, l, k, M)
+	trap = shaper_np(shp_in, l, k, M)
 
-	u.plot(trap, trap_ax)
+	plot(trap, trap_ax)
 	### returning values with named tuples ###
 
 	fig1.show() # plot the data
@@ -152,12 +199,12 @@ def test_shaper_np(l, k, M):
 	exp = np.ones(2000, dtype=np.float32)*0.828
 	exp[1000:] += 0.01*np.exp(-(1/40.)*np.linspace(0, 999,1000))
 	
-	filt = u.shaper_np(exp, l, k, M)
+	filt = shaper_np(exp, l, k, M)
 	#filt = shaper_np(step, 20, 10, -1)
 
-	u.plot(exp, axis)
+	plot(exp, axis)
 	#plot(step, axis2)
-	u.plot(filt, axis3)
+	plot(filt, axis3)
 	
 
 	fig.show()
@@ -169,13 +216,13 @@ def test_savgol():
 	fig2, axis2 = plt.subplots(1,1)
 	fig3, axis3 = plt.subplots(1,1)
 
-	data = u.pull_one('../data_TM1x1/out22_dmux.h5', 100)
-	filt1 = u.savgol_scipy(data, 15, 4)
-	filt2 = u.savgol_gsl(data, 4, 0, 15)
+	data = pull_one('../data_TM1x1/out22_dmux.h5', 100)
+	filt1 = savgol_scipy(data, 15, 4)
+	filt2 = savgol_gsl(data, 4, 0, 15)
 
-	u.plot(data, axis)
-	u.plot(filt1, axis2)
-	u.plot(filt2, axis3)
+	plot(data, axis)
+	plot(filt1, axis2)
+	plot(filt2, axis3)
 
 	fig.show()
 	fig2.show()
