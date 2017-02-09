@@ -9,8 +9,8 @@
 #include "common.h"
 #include "hdf5rawWaveformIo.h"
 
-typedef SCOPE_DATA_TYPE_FLOAT IN_WFM_BASE_TYPE;
-typedef SCOPE_DATA_TYPE_FLOAT OUT_WFM_BASE_TYPE;
+typedef SCOPE_DATA_TYPE_DOUBLE IN_WFM_BASE_TYPE;
+typedef SCOPE_DATA_TYPE_DOUBLE OUT_WFM_BASE_TYPE;
 
 typedef struct peaks_handle 
 {
@@ -143,7 +143,7 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
     }
 }
 
-void trapezoid(float * input, float * filter, size_t length, size_t k, size_t l, double M)
+void trapezoid(double *input, double *filter, size_t length, size_t k, size_t l, double M)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */
@@ -224,8 +224,7 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 
     struct hdf5io_waveform_file *inWfmFile, *outWfmFile;
     struct waveform_attribute inWfmAttr, outWfmAttr;
-    struct hdf5io_waveform_event_float inWfmEvent;
-    struct hdf5io_waveform_event_float outWfmEvent;
+    struct hdf5io_waveform_event inWfmEvent, outWfmEvent;
     IN_WFM_BASE_TYPE *inWfmBuf;
     OUT_WFM_BASE_TYPE *outWfmBuf;
 
@@ -275,14 +274,14 @@ void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
     hdf5io_write_waveform_attribute_in_file_header(outWfmFile, &outWfmAttr);
 
     inWfmBuf = (IN_WFM_BASE_TYPE*)malloc(inWfmFile->nPt * inWfmFile->nCh * sizeof(IN_WFM_BASE_TYPE));
-    inWfmEvent.wavBuf = inWfmBuf;
+    inWfmEvent.wavBufD = inWfmBuf;
     outWfmBuf = (OUT_WFM_BASE_TYPE*)malloc(outWfmFile->nPt * outWfmFile->nCh * sizeof(OUT_WFM_BASE_TYPE));
-    outWfmEvent.wavBuf = outWfmBuf;
+    outWfmEvent.wavBufD = outWfmBuf;
     
     /* this loop works for multiple sensors, the pixels repeat from 0->5184 for each
        individual sensor. e.g. nCh is (nSensor*5184) */
     for(inWfmEvent.eventId = 0; inWfmEvent.eventId < 1; inWfmEvent.eventId++) {
-        hdf5io_read_event_float(inWfmFile, &inWfmEvent);
+        hdf5io_read_event_double(inWfmFile, &inWfmEvent);
         for(iCh=0; iCh < inWfmFile->nCh; iCh++) {
             idx1 = iCh*inWfmFile->nPt;
             s = 0.0; pp = 0.0; /* reset these each pixel, because

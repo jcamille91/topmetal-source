@@ -75,19 +75,23 @@ def savgol_gsl(data, order, der, window):
 	# apply savitsky-golay 'least squares' filter to a numpy array, return the
 	# numpy array for quick analysis.
 
-	# gsl only suppors LU decomposition for double data type(np.float64()), unfortunately.
-	# we could cast the data to float32 and get some error...?
-	test = npct.ndpointer(npct.as_ctypes(np.float32()))
+
+	test = npct.ndpointer(npct.as_ctypes(np.float64()))
 	lib = CDLL("filters.so")
 
 	lib.savgol_np.restype = None
-						  # 	  in 		 out    length   order  der   window
-	lib.savgol_np.argtypes = [float_ptr, float_ptr, c_ulong, c_int, c_int, c_int]
+						  # 	  in 		out      length  order   der   window
+	lib.savgol_np.argtypes = [double_ptr, double_ptr, c_ulong, c_int, c_int, c_int]
  
 	filt = np.empty_like(data)
 	lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
 	
 	return np.array(filt)
+
+def savgol_scipy(array, npt, order):
+	
+	out = savgol_filter(array, npt, order)
+	return out
 
 def shaper_np(data, l, k, M):
 	# apply trapezoidal filter to a numpy array, return the numpy array 
@@ -105,13 +109,6 @@ def shaper_np(data, l, k, M):
 	lib.trapezoid(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M))
 	
 	return np.array(filt)
-
-
-def savgol_scipy(array, npt, order):
-	
-	out = savgol_filter(array, npt, order)
-	return out
-
 
 def peakdet_cwt(data, axis):
    # do a first check for peaks in the dataset. After finding peaks, should create a list of 
@@ -175,10 +172,7 @@ def pull_one(infile, pixel):
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
 		d = hf.get(event)
-		#data = np.array(d, dtype=np.float32)
-		data = np.array(d)
-
-
+		data = np.array(d, dtype=np.float64)
 	return data[pixel]
 
 def pull_all(infile):

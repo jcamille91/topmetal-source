@@ -1,8 +1,6 @@
 from util import *
 
 def dmux_input():
-
-
 	# let's input a known signal to see if the demux is working.
 
 	# ok... was the problem the file name? 

@@ -54,12 +54,10 @@ endif
 ############################ Define targets ###################################
 #EXE_TARGETS = demux shaper
 DEBUG_EXE_TARGETS = hdf5rawWaveformIo
-SHLIB_TARGETS = H5SHLIB.so demux.so 
+SHLIB_TARGETS = H5SHLIB.so demux.so shaper.so filters.so 
 #demux_dbl.so demux_flt.so
-#demux.so shaper.so filters.so
-O_TARGETS = hdf5rawWaveformIo.o demux.o
+O_TARGETS = hdf5rawWaveformIo.o demux.o shaper.o filters.o
 #demux_dbl.o demux_flt.o
-#demux.o shaper.o filters.o
 
 ifeq ($(ARCH), x86_64) # compile a 32bit version on 64bit platforms
   # SHLIB_TARGETS += XXX_m32$(SHLIB_EXT)

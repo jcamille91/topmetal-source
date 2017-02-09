@@ -9,7 +9,7 @@
 
 // types and name mangling macro for filters.c
 #define FFTW(name) fftw_ ## name
-#define RAW_WAVEFORM_BASE_TYPE SCOPE_DATA_TYPE_FLOAT
+#define RAW_WAVEFORM_BASE_TYPE SCOPE_DATA_TYPE_DOUBLE
 #define ANALYSIS_WAVEFORM_BASE_TYPE double
 #define FFT_BASE_TYPE double /* if this is float, FFTW should be fftwf_. also include -lfftw3f in the makefile. */
                             /* if this is double, FFTW should be fftw_. also include -lfftw3 in the makefile. */
