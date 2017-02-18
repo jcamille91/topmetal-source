@@ -9,12 +9,10 @@
 
 // types and name mangling macro for filters.c
 #define FFTW(name) fftw_ ## name
-#define RAW_WAVEFORM_BASE_TYPE SCOPE_DATA_TYPE_DOUBLE
 #define ANALYSIS_WAVEFORM_BASE_TYPE double
 #define FFT_BASE_TYPE double /* if this is float, FFTW should be fftwf_. also include -lfftw3f in the makefile. */
                             /* if this is double, FFTW should be fftw_. also include -lfftw3 in the makefile. */
 #define WAVELET_BASE_TYPE double
-#define SAVGOL_TYPE double
 
 
 typedef struct filters_handle 
@@ -51,7 +49,7 @@ filters_t *filters_init(ANALYSIS_WAVEFORM_BASE_TYPE *inWav, size_t n);
  /* for convolution and fft */
 filters_t *filters_init_for_convolution(ANALYSIS_WAVEFORM_BASE_TYPE *inWav, size_t n, size_t np);
 int filters_close(filters_t *fHdl);
-
+int savgol_np(ANALYSIS_WAVEFORM_BASE_TYPE *in, ANALYSIS_WAVEFORM_BASE_TYPE *out, size_t length, int m, int ld, int window);
 int filters_SavitzkyGolay(filters_t *fHdl, int m, int ld);
 int filters_raisedCosine(filters_t *fHdl);
 int filters_convolute(filters_t *fHdl);

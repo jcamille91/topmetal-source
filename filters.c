@@ -121,33 +121,107 @@ int filters_close(filters_t *fHdl)
 /* Filters should directly write into fHdl->respWav the real space
  * response waveform in wrapped around order */
 
-void savgol_np(ANALYSIS_WAVEFORM_BASE_TYPE *in, ANALYSIS_WAVEFORM_BASE_TYPE *out, size_t length, int m, int ld, int window)
+int savgol_np(ANALYSIS_WAVEFORM_BASE_TYPE *in, ANALYSIS_WAVEFORM_BASE_TYPE *out, size_t length, int m, int ld, int window)
 {
     /* function to call setup/memory allocation and apply Savitsky-Golay filtering
        to use with numpy arrays for quick analysis */
     
     filters_t *sghandle;
-    int val;
+    int valsg, valclose;
 
     // compare these two initializations, both or just one?? run as double for the
     // moment so we don't have to use different FFTW3 library.
 
-    sghandle = filters_init(in, length);
+    // sghandle = filters_init(in, length);
     sghandle = filters_init_for_convolution(in, length, window);
-    val = filters_SavitzkyGolay(sghandle, m, ld);
+    valsg = filters_SavitzkyGolay(sghandle, m, ld);
     out = sghandle->respWav;
-    filters_close(sghandle);
+    valclose = filters_close(sghandle);
     
+    return 0;
 }
 
+// this one doesn't seem to be working properly....    
+// int filters_SavitzkyGolay(filters_t *fHdl, int m, int ld)
+// /* m: order of polynomial, np: number of points, ld: degree of derivative*/
+// {
+//     int np;
+//     ANALYSIS_WAVEFORM_BASE_TYPE *c;
+//     int ipj, imj, mm, j, k, nl, nr;
+//     double fac, sum;
+//     gsl_permutation * p;
+//     gsl_vector *b;
+//     gsl_matrix *a;
+
+//     np = fHdl->respLen;
+//     if(np<1 || np<m-1 || np%2==0 || ld>m || np!=fHdl->respLen) {
+//         error_printf("%s(): improper arguments, returning...\n", __FUNCTION__);
+//         return 1;
+//     }
     
+//     c = calloc(np, sizeof(ANALYSIS_WAVEFORM_BASE_TYPE));
+
+//     p = gsl_permutation_alloc (m+1);
+//     b = gsl_vector_alloc(m+1);
+//     a = gsl_matrix_alloc(m+1, m+1);
+
+//     nl = np/2;
+//     nr = nl;
+
+//     for(ipj=0;ipj<=(m << 1);ipj++) {
+//         sum=(ipj ? 0.0 : 1.0);
+//         for(k=1;k<=nr;k++) sum += pow((double)(k),(double)(ipj));
+//         for(k=1;k<=nl;k++) sum += pow((double)(-k),(double)(ipj));
+//         mm=MIN(ipj,2*m-ipj);
+//         for(imj=-mm;imj<=mm;imj+=2) gsl_matrix_set(a,(ipj+imj)/2,(ipj-imj)/2,sum);
+//     }
+
+//     gsl_linalg_LU_decomp(a, p, &k);
+//     for (j=0;j<m+1;j++) gsl_vector_set(b,j,0.0);
+//     gsl_vector_set(b,ld,1.0);
+    
+//     gsl_linalg_LU_solve (a, p, b, b);
+
+//     for(k = -nl;k<=nr;k++) {
+//         sum = gsl_vector_get(b,0);
+//         fac = 1.0;
+//         for (mm=1;mm<=m;mm++) sum += gsl_vector_get(b,mm)*(fac *= k);
+
+//         j=(np-k) % np;
+//         c[j]=sum; // c is in wraparound order, convenient for fft convolute
+
+//         // c[nl + k] = sum;
+//     }
+//     memcpy(fHdl->respWav, c, np * sizeof(ANALYSIS_WAVEFORM_BASE_TYPE));
+// /*
+//     for(j=0; j<np; j++) {
+//         fprintf(stderr, "%g\n", c[j]);
+//     }
+// */    
+//     gsl_vector_free(b);
+//     gsl_matrix_free(a);
+//     gsl_permutation_free(p);
+
+// /*
+//     for(k=nl; k<wavlen - nr; k++) {
+//         sum = 0.0;
+//         for(j=0; j<np; j++) {
+//             sum += c[j] * inwav[k+j-nl];
+//             outwav[k] = sum;
+//         }
+//     }
+// */
+//     free(c);
+//     return 0;
+// }
+
 int filters_SavitzkyGolay(filters_t *fHdl, int m, int ld)
 /* m: order of polynomial, np: number of points, ld: degree of derivative*/
 {
     int np;
     ANALYSIS_WAVEFORM_BASE_TYPE *c;
     int ipj, imj, mm, j, k, nl, nr;
-    SAVGOL_TYPE fac, sum;
+    double fac, sum;
     gsl_permutation * p;
     gsl_vector *b;
     gsl_matrix *a;
@@ -169,8 +243,8 @@ int filters_SavitzkyGolay(filters_t *fHdl, int m, int ld)
 
     for(ipj=0;ipj<=(m << 1);ipj++) {
         sum=(ipj ? 0.0 : 1.0);
-        for(k=1;k<=nr;k++) sum += pow((SAVGOL_TYPE)(k),(SAVGOL_TYPE)(ipj));
-        for(k=1;k<=nl;k++) sum += pow((SAVGOL_TYPE)(-k),(SAVGOL_TYPE)(ipj));
+        for(k=1;k<=nr;k++) sum += pow((double)(k),(double)(ipj));
+        for(k=1;k<=nl;k++) sum += pow((double)(-k),(double)(ipj));
         mm=MIN(ipj,2*m-ipj);
         for(imj=-mm;imj<=mm;imj+=2) gsl_matrix_set(a,(ipj+imj)/2,(ipj-imj)/2,sum);
     }

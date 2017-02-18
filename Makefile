@@ -18,7 +18,8 @@ GSLLIBS  = $(shell gsl-config --libs)
 CFLAGS  += -DH5_NO_DEPRECATED_SYMBOLS 
 SHLIB_CFLAGS += -DH5_NO_DEPRECATED_SYMBOLS
 LIBS    += $(GSLLIBS)
-LIBS    += -lfftw3_threads -lfftw3f_threads -lfftw3 -lfftw3f
+LIBS    += -lfftw3_threads -lfftw3 
+# LIBS    += -lfftw3f_threads -lfftw3f for float type functions
 ############################# OS & ARCH specifics #############################
 ifneq ($(if $(filter Linux %BSD,$(OSTYPE)),OK), OK)
   ifeq ($(OSTYPE), Darwin)

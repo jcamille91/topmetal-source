@@ -23,6 +23,16 @@ from scipy.signal import find_peaks_cwt, convolve, savgol_filter
 import warnings
 warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
 
+# named tuples can be convenient for returning items from functions without needing
+# to remember indices/ordering.
+from collections import namedtuple
+
+### a note on the two types of python pointer functionalities used here ###
+# 1. use Ctypes 'POINTER' functionality for defining/building data structures
+# to use between C and Python.
+# 2. use Numpy.Ctypeslib's 'ndpointer' to easily pass and return
+# pointer-arrays between C and python for quick analysis of data in python environment.
+
 # define pointer types for passing arrays between C and Python
 float_ptr = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
 sizet_ptr = npct.ndpointer(c_ulong, ndim=1, flags='CONTIGUOUS')
@@ -46,7 +56,6 @@ def	pk_hdl(nPk, left, right, l, k, M):
 	l_p = l.ctypes.data_as(c_ulong_p)
 	k_p = k.ctypes.data_as(c_ulong_p)
 	M_p = M.ctypes.data_as(c_double_p)
-
 	return peaks_t(nPk, left_p, right_p, l_p, k_p, M_p)
 
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -64,7 +73,6 @@ def demuxF(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
    lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
    lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
-
 def smooth(infile, outfile, l, k, M):
    # apply trapezoidal filter with 'rough parameters' to smooth the dataset so we can search for peaks.
    lib = CDLL("shaper.so")
@@ -72,21 +80,103 @@ def smooth(infile, outfile, l, k, M):
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
 
 def savgol_gsl(data, order, der, window):
+	# BROKEN 2/13/2017
+	# get array with really small first value, then values aren't total bogus but definitely incorrect...
+
 	# apply savitsky-golay 'least squares' filter to a numpy array, return the
 	# numpy array for quick analysis.
 
-
-	test = npct.ndpointer(npct.as_ctypes(np.float64()))
 	lib = CDLL("filters.so")
-
-	lib.savgol_np.restype = None
-						  # 	  in 		out      length  order   der   window
+	lib.savgol_np.restype = c_int
+						  # 	  in 		out        length  order   der   window
 	lib.savgol_np.argtypes = [double_ptr, double_ptr, c_ulong, c_int, c_int, c_int]
- 
 	filt = np.empty_like(data)
-	lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
-	
+	ret = lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
 	return np.array(filt)
+
+def peak_det(data,threshold, minsep):
+
+	# 'threshold' in volts above the average signal value
+	# 'minsep' minimum number of samples between peaks. 
+	#  peaks closer than minsep are discarded.
+
+	# sign == 1 does positive data with peaks
+	# sign == -1 does negative data with valleys
+
+	# GSL based savgol filter is broken... values aren't ridiculously wrong... but
+	# don't follow trend or baseline of the data...
+	
+	# GSL_Sign, Yuan's convolution by FFT
+	trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm')
+	sign = 1
+	threshold = 0.005
+	minsep = 5
+	# infile = '../data_TM1x1/demuxdouble.h5'
+	# fig, axis = plt.subplots(1,1)
+	# fig2, axis2 = plt.subplots(1,1)
+	# raw = pull_one(infile, 1321)
+	# #data = savgol_gsl(rawdata, 4, 0, 15)
+	# filt = savgol_scipy(raw,15,4)
+	# rcut = raw[9000:9300]
+	# fcut = filt[9000:9300]
+
+
+	# first implement for positive values
+
+	# Y = filt
+	# plot(raw, axis)
+
+	Y = data
+	filt = savgol_scipy(data,15,4)
+	mean = np.mean(filt[:2000])
+	kernel = [1,0,-1]
+	# derivative
+	dY = convolve(Y, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
+	# normalize to 1. this array then tells us which direction the data is going, without indication of how quick.
+	S = np.sign(dY)
+	# the second derivative of the normalized derivative.
+	# should only have values for peaks and valleys, where the value of the derivative changes.
+	ddS = convolve(S, kernel, 'valid')
+
+	# first, find all of the positive derivative values. going up the peak.
+	# this returns indices of possible candidates. we want to offset by two because
+	# the convolution cuts the array length by len(kernel)-1
+	if (sign == 1) :
+		candidates = np.where(dY > 0)[0] + (len(kernel)-1)
+	elif (sign == -1) :
+		candidates = np.where(dY < 0)[0] + (len(kernel)-1)
+
+	peaks = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
+	alpha = mean + sign*threshold
+	# currently peaks is a set, cast as numpy array with a condition that we're 
+	# above the minimum threshold for a peak to be valid.
+	if (sign == 1) :
+		peaks = np.array(peaks)[Y[peaks] > alpha]
+	elif (sign == -1) :
+		peaks = np.array(peaks)[Y[peaks] < alpha]
+
+	# remove peaks within the minimum separation
+	
+	minsep = 5
+	toss = np.array([0])
+	for i in np.arange(len(peaks)-1) :
+		# if the peaks are closer than the minimum separation and the second peak is
+		# larger than the first, throw out the first peak. 
+		if ((peaks[i+1]-peaks[i]) < minsep) :
+		#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
+			toss = np.append(toss, i+1)
+
+	# remove junk element we left to initialize array.
+	toss = np.delete(toss, 0)
+	peaks_minsep = np.delete(peaks, toss)
+		
+	# axis.scatter(peaks, Y[peaks], marker='x', color='r', s=40)
+	# axis.scatter(peaks_minsep, Y[peaks_minsep], marker='o', color='g', s=40)
+	# fig.show()
+
+	return peaks_minsep
+	#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=peaks, toss=toss, pkm=peaks_minsep)
+
 
 def savgol_scipy(array, npt, order):
 	
@@ -99,15 +189,12 @@ def shaper_np(data, l, k, M):
 
 	# import the library
 	lib = CDLL("shaper.so")
-
 	lib.trapezoid.restype = None
 						  # 	  in 		out   	 length  	l  		k 		  M
 	lib.trapezoid.argtypes = [float_ptr, float_ptr, c_ulong, c_ulong, c_ulong, c_double]
- 
 	# allocate an array to hold output.
 	filt = np.empty_like(data)
 	lib.trapezoid(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M))
-	
 	return np.array(filt)
 
 def peakdet_cwt(data, axis):

@@ -3,8 +3,6 @@
  */
 #ifndef __COMMON_H__
 #define __COMMON_H__
-// name mangling macros. one for HDF5 i/o, other for FFTW3
-#define HDF5IO(name) hdf5io_ ## name
 
 /* filling memory per channel:
 
