@@ -83,6 +83,15 @@ def send_struct():
 
 def send_peaks():
 
+			### TEST THIS NEXT ###
+
+	# test a limiting case for filters working on the edge:
+	# see if the response looks good in the presence of noise / shifting baseline
+	# if we switch l,k,M right at the beginning of a peak. if so, this could
+	# simplify specifying different lengths of filtering for quick successive peaks.
+	
+			######################
+
 	# send an array of exponentials with expected tau and filter them with different M's using
 	# shaper_peaks in the shaper.c file.
 	fig, axis = plt.subplots(1,1)
@@ -112,82 +121,29 @@ def send_peaks():
 	fig.show()
 	fig2.show()
 
-def test_trigger():
-	# sign == 1 does positive data with peaks
-	# sign == -1 does negative data with valleys
+def trigger():
 
-	# GSL based savgol filter is broken... values aren't ridiculously wrong... but
-	# don't follow trend or baseline of the data...
-	
-	# GSL_Sign, Yuan's convolution by FFT
 	trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm')
 	sign = 1
-	threshold = 0.005
-	minsep = 10
+	threshold = 0.006
+	minsep = 5
 	infile = '../data_TM1x1/demuxdouble.h5'
 	fig, axis = plt.subplots(1,1)
-	fig2, axis2 = plt.subplots(1,1)
-	raw = pull_one(infile, 1321)
-	#data = savgol_gsl(rawdata, 4, 0, 15)
-	filt = savgol_scipy(raw,15,4)
-	rcut = raw[9000:9300]
-	fcut = filt[9000:9300]
+	data = pull_one(infile, 1321)
+	peaks = get_peaks(data, threshold, minsep)
 
-
-	# first implement for positive values
-
-	Y = filt
-	plot(raw, axis)
-	mean = np.mean(filt[:2000])
-	kernel = [1,0,-1]
-	# derivative
-	dY = convolve(Y, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
-	# normalize to 1. this array then tells us which direction the data is going, without indication of how quick.
-	S = np.sign(dY)
-	# the second derivative of the normalized derivative.
-	# should only have values for peaks and valleys, where the value of the derivative changes.
-	ddS = convolve(S, kernel, 'valid')
-
-	# first, find all of the positive derivative values. going up the peak.
-	# this returns indices of possible candidates. we want to offset by two because
-	# the convolution cuts the array length by len(kernel)-1
-	if (sign == 1) :
-		candidates = np.where(dY > 0)[0] + (len(kernel)-1)
-	elif (sign == -1) :
-		candidates = np.where(dY < 0)[0] + (len(kernel)-1)
-
-	peaks = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
-	alpha = mean + sign*threshold
-	# currently peaks is a set, cast as numpy array with a condition that we're 
-	# above the minimum threshold for a peak to be valid.
-	if (sign == 1) :
-		peaks = np.array(peaks)[Y[peaks] > alpha]
-	elif (sign == -1) :
-		peaks = np.array(peaks)[Y[peaks] < alpha]
-
-	# remove peaks within the minimum separation
-	
-	minsep = 5
-	toss = np.array([0])
-	for i in np.arange(len(peaks)-1) :
-		# if the peaks are closer than the minimum separation and the second peak is
-		# larger than the first, throw out the first peak. 
-		if ((peaks[i+1]-peaks[i]) < minsep) :
-		#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
-			toss = np.append(toss, i+1)
-
-	# remove junk element we left to initialize array.
-	toss = np.delete(toss, 0)
-	peaks_minsep = np.delete(peaks, toss)
-		
-	axis.scatter(peaks, Y[peaks], marker='x', color='r', s=40)
-	axis.scatter(peaks_minsep, Y[peaks_minsep], marker='o', color='g', s=40)
+	fig, ax = plt.subplots(1,1)
+	plot(data, ax)
+	ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
 	fig.show()
-	#return peaks
-	return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=peaks, toss=toss, pkm=peaks_minsep)
 
 
 def test(pixel, pk, fit_length, l, k):
+
+	# for fitting and filtering, do a conditional:
+
+	# fit / filter either max value, or the distance between peaks if it is less
+	# than the max value. i think these two possibilities should be sufficient.
 
 	# temporarily fixed infile because we're just using one file. insert it into arguments
 	# again if we need the flexibility.
@@ -260,7 +216,14 @@ def test(pixel, pk, fit_length, l, k):
 
 	# now let's iterate through the peaks and filter them with their appropriate time constants
 
-def test_shaper_np(l, k, M):
+def shaper_np_test(l, k, M):
+
+	### TEST THIS NEXT ###
+
+	# test a limiting case for filters working on the edge:
+	# see if the response looks good in the presence of noise / shifting baseline
+	# if we switch l,k,M right at the beginning of a peak. if so, this could
+	# simplify specifying different lengths of filtering for quick successive peaks.
 
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
@@ -286,7 +249,7 @@ def test_shaper_np(l, k, M):
 	#fig2.show()
 	fig3.show()
 
-def test_savgol():
+def savgol_test():
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
 	fig3, axis3 = plt.subplots(1,1)
