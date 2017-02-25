@@ -121,6 +121,31 @@ def send_peaks():
 	fig.show()
 	fig2.show()
 
+def peak_measure():
+
+	# build an array with some exponentials with known time constants
+	# exp = np.ones(10000, dtype=c_double)*0.828
+	# exp[1000:2000] += 0.01*np.exp(-(1.0/40)*np.linspace(0, 999,1000))	
+	# exp[5000:6000] += 0.008*np.exp(-(1.0/70)*np.linspace(0, 999,1000))
+	# exp[8000:9000] += 0.011*np.exp(-(1.0/100)*np.linspace(0, 999,1000))
+
+	exp = np.ones(10000, dtype=np.float64)*0.828
+	exp[1000:2000] += 0.01*np.exp(-(1.0/10)*np.arange(1000))	
+	exp[5000:6000] += 0.008*np.exp(-(1.0/30)*np.arange(1000))
+	exp[8000:9000] += 0.011*np.exp(-(1.0/45)*np.arange(1000))
+ 	noise = 
+ 	exp = exp + noise
+ 	
+	peaks = get_peaks(exp)
+	tau = get_tau(exp, peaks)
+	
+	fig,ax = plt.subplots(1,1)
+	
+	plot(exp, ax)
+	ax.scatter(peaks, exp[peaks], marker='x', color='r', s=40)
+
+	return (peaks, tau[0])
+
 def trigger():
 
 	trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm')

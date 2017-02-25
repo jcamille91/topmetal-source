@@ -131,7 +131,7 @@ def get_peaks(data, threshold, minsep):
 		candidates = np.where(dY < 0)[0] + (len(kernel)-1)
 
 	peaks = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
-	alpha = mean + sign*threshold
+	alpha = mean + (sign * threshold)
 
 	if (sign == 1) :
 		peaks = np.array(peaks)[Y[peaks] > alpha]
@@ -158,21 +158,44 @@ def get_peaks(data, threshold, minsep):
 
 def get_tau(data, peaks)
 	
-	# input data and peak locations. return time constants / chi-square values
+	# input data and peak locations. return time constants and chi-square values
 	# for each corresponding peak so we can filter the peaks.
+	tau = np.zeros(len(peaks), dtype=np.float64)
+	chisq = np.zeros(len(peaks), dtype=np.float64)
+	fudge = 10 # scoot fit in from the end. use for back to back peaks to improve fit.
+	avg = np.mean(data[:2000])
+	rms = np.std(data[:2000]) # measure rms of dataset for the lsq fit.
+	#rms = 0.003 # can fix this to a few mV if we are getting weird results.
 	
-	fudge = 5 
-	# assumption: the data is modeled by a simple decaying exponential.
-	def model_func(x, amp, tau, offset) :
-		return amp*np.exp(-tau*(x))+offset
-	# use a given fit length if the peaks are far away. if they are close, fit only
-	# as much room as there is between peaks. may want to incorporate an extra 'gap'
-	# variable to account for errors in peak detection.
-	for i in np.arange(len(peaks)) :
-		if peaks[i+1]-peaks[i] < fit_length
-			pulse = data[peaks[i]:peaks[i+1]-fudge]
-		else
-			pulse = data[peaks[i]:peaks[i]+fit_length]
+	# assumption: data is modeled by a 3 parameter decaying exponential.
+	M = 3
+	def model(x, A, l, off) :
+		return ( A * np.exp( -l * (x) ) ) + off
+
+	# 			   PARAMETER FORMAT: ([A, l, off]
+	#				 MIN 					MAX
+	bounds = ([0.0, 1.0/50, avg], [0.03, 1.0/10, avg+0.3])
+	guess = [0.008, 1.0/35, avg]
+	
+	fit_length = 100
+	# use fit_length if the peaks are far away. if they are close, 
+	# fit only as much data as is available between peaks.
+	for j in np.arange(len(peaks)) :
+		if peaks[j+1]-peaks[j] < fit_length : 
+			yi = data[peaks[j]:peaks[j+1]-fudge]
+		else :								  
+			yi = data[peaks[j]:peaks[j]+fit_length]
+		N=len(yi)
+		xi = np.arange(N)	
+		par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+				             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
+				             bound=bounds, method='trf')
+
+		f_xi = model(xi, *par)
+		Xsq, P = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
+		
+		tau[j] = 1.0/par[1]
+		chisq[j] = Xsq
 
 	return (tau, chisq)
 def savgol_scipy(array, npt, order):
