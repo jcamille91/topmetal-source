@@ -41,11 +41,12 @@ c_ulong_p = POINTER(c_ulong)
 c_double_p = POINTER(c_double)
 
 # make a peak Ctypes structure for trapezoidal filtering. "Structure" is from Ctypes.
+# for more general specification of where to begin/end filter changes.
 class peaks_t(Structure):
 	_fields_ = [("nPk", c_ulong), ("LEFT", c_ulong_p), ("RIGHT", c_ulong_p),
 				("l", c_ulong_p), ("k", c_ulong_p), ("M", c_double_p)]
 
-def	pk_hdl(nPk, left, right, l, k, M):
+def	peaks_handle(nPk, left, right, l, k, M):
 
 	# this function converts numpy arrays into the appropriate 
 	# pointers for the peaks_t structure
@@ -56,6 +57,23 @@ def	pk_hdl(nPk, left, right, l, k, M):
 	k_p = k.ctypes.data_as(c_ulong_p)
 	M_p = M.ctypes.data_as(c_double_p)
 	return peaks_t(nPk, left_p, right_p, l_p, k_p, M_p)
+
+# make a peak Ctypes structure for trapezoidal filtering. "Structure" is from Ctypes.
+# changes from peak to peak.
+# class pk_t(Structure):
+# 	_fields_ = [("nPk", c_ulong), ("loc", c_ulong_p),
+# 				("l", c_ulong_p), ("k", c_ulong_p), ("M", c_double_p)]
+# def pk_hdl(nPk, loc, l, k, M):
+
+# 	nPk = c_ulong(nPk)
+# 	loc_p = loc.ctypes.data_as(c_ulong_p)
+# 	l_p = l.ctypes.data_as(c_ulong_p)
+# 	k_p = k.ctypes.data_as(c_ulong_p)
+# 	M_p = M.ctypes.data_as(c_double_p)
+# 	return pk_t(nPk, loc_p, l_p, k_p, M_p)
+
+
+
 
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
    lib = CDLL("demux.so")
@@ -139,7 +157,7 @@ def get_peaks(data, threshold, minsep):
 		peaks = np.array(peaks)[Y[peaks] < alpha]
 
 	# remove peaks within the minimum separation... can do this in a smarter way.
-	minsep = 5
+	#minsep = 5
 	toss = np.array([0])
 	for i in np.arange(len(peaks)-1) :
 		# if the peaks are closer than the minimum separation and the second peak is
@@ -156,13 +174,12 @@ def get_peaks(data, threshold, minsep):
 	# return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=peaks, toss=toss, pkm=peaks_minsep)
 	return peaks_minsep
 
-def get_tau(data, peaks)
+def get_tau(data, peaks, fudge):
 	
 	# input data and peak locations. return time constants and chi-square values
 	# for each corresponding peak so we can filter the peaks.
 	tau = np.zeros(len(peaks), dtype=np.float64)
 	chisq = np.zeros(len(peaks), dtype=np.float64)
-	fudge = 10 # scoot fit in from the end. use for back to back peaks to improve fit.
 	avg = np.mean(data[:2000])
 	rms = np.std(data[:2000]) # measure rms of dataset for the lsq fit.
 	#rms = 0.003 # can fix this to a few mV if we are getting weird results.
@@ -180,24 +197,62 @@ def get_tau(data, peaks)
 	fit_length = 100
 	# use fit_length if the peaks are far away. if they are close, 
 	# fit only as much data as is available between peaks.
-	for j in np.arange(len(peaks)) :
+	npk = len(peaks)
+	end = len(data)-1
+	peaks = np.append(peaks, end) 
+	for j in np.arange(npk) :
 		if peaks[j+1]-peaks[j] < fit_length : 
 			yi = data[peaks[j]:peaks[j+1]-fudge]
 		else :								  
 			yi = data[peaks[j]:peaks[j]+fit_length]
 		N=len(yi)
 		xi = np.arange(N)	
-		par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+		par, cov = curve_fit(f=model, xdata=xi, ydata=yi, p0=guess, \
 				             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
-				             bound=bounds, method='trf')
+				             bounds=bounds, method='trf')
 
 		f_xi = model(xi, *par)
 		Xsq, P = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
 		
 		tau[j] = 1.0/par[1]
 		chisq[j] = Xsq
+	
+	return tau
+	#return (tau, chisq)
 
-	return (tau, chisq)
+def shaper_peaks(data, peaks, l, k, M, offset):
+
+	npk = len(peaks)
+
+	# for now just fix l,k.
+	l = np.ones(npk)*25
+	k = np.ones(npk)*10
+
+	# put peak locations into left/right for the filter.
+	# offset left/rights of peak with 'off'. use negative sign
+	# to offset before the peak, positive for after the peak.
+	npk = len(peaks)
+	LEFT = np.zeros(npk)
+	RIGHT = np.zeros(npk)	
+
+	for i in np.arange(npk)-1:
+		LEFT[i+1] = peaks[i]
+		RIGHT[i] = peaks[i]
+		
+	LEFT +=	offset
+	RIGHT += offset
+	LEFT[0] = 0
+	RIGHT[npk-1] = len(data)-1
+
+	PEAK = peaks_handle(npk, LEFT, RIGHT, l, k, M)
+	out = np.empty_like(data)
+	lib = CDLL("shaper.so")
+	lib.shaper_peaks.restype = None
+	lib.shaper_peaks.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t)]
+	lib.shaper_peaks(data, out, c_ulong(len(data)), byref(PEAK))
+
+	return out
+
 def savgol_scipy(array, npt, order):
 	
 	out = savgol_filter(array, npt, order)
@@ -207,7 +262,7 @@ def peakdet_cwt(data, axis):
    # do a first check for peaks in the dataset. After finding peaks, should create a list of 
    # 'event' objects that will be modified as the data is further processed.
    width = np.array([1,10,20,30,40,50])
-   candidates = find_peaks_cwt(data,width)	
+   candidates = find_peaks_cwt(data, width)	
    axis.scatter(candidates, data[candidates], marker='o', color='r', s=40)
 
    return candidates

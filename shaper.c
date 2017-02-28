@@ -15,11 +15,11 @@ typedef SCOPE_DATA_TYPE_DOUBLE OUT_WFM_BASE_TYPE;
 typedef struct peaks_handle 
 {
     // structure with left and rightmost points of a pulse, 
-    // and the filter parameters for each pulse. might temporarily fix l,k in actual
-    // actual filtering for the moment.
+    // and the filter parameters for each pulse. might temporarily fix l,k 
+    // for the moment.
 
     size_t nPk;
-    size_t *LEFT; // beginning of a peak
+    size_t *LEFT;
     size_t *RIGHT;
     size_t *l;
     size_t *k;
@@ -27,12 +27,17 @@ typedef struct peaks_handle
 
 } peaks_t;
 
-// argtype for ctypes : [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
-peaks_t *init_peaks(peaks_t *input) {
+// typedef struct pk_hdl 
+// {
 
-return input;
+//     size_t nPk;
+//     size_t *loc;
+//     size_t *l;
+//     size_t *k;
+//     double *M;
 
-}
+// } pk_t;
+
 
 void read_arr(size_t *input){
 
@@ -88,20 +93,21 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
      * is the decay time constant (in number of samples) of the input
      * pulse.  Set M=-1.0 to deal with a step-like input function.
      */
-    size_t l, k, ipk, start, stop;
+    size_t l, k, ipk, start, stop, npk;
     ssize_t i, j, jk, jl, jkl, idx1 = 0;
     double M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     
-    fprintf(stderr, "l[0]: %zu\n", PEAKS->l[0]);
-    fprintf(stderr, "k[0]: %zu\n", PEAKS->k[0]);
-    fprintf(stderr, "M[0]: %f\n", PEAKS->M[0]);
+    // fprintf(stderr, "l[0]: %zu\n", PEAKS->l[0]);
+    // fprintf(stderr, "k[0]: %zu\n", PEAKS->k[0]);
+    // fprintf(stderr, "M[0]: %f\n", PEAKS->M[0]);
 
-    fprintf(stderr, "input[1000]: %f\n", input[1000]);
-    fprintf(stderr, "input[5]: %f\n", input[5]);
-    fprintf(stderr, "input[8000]: %f\n", input[8000]);
+    // fprintf(stderr, "input[1000]: %f\n", input[1000]);
+    // fprintf(stderr, "input[5]: %f\n", input[5]);
+    // fprintf(stderr, "input[8000]: %f\n", input[8000]);
 
+    npk = PEAKS->nPk;
 
-    for(ipk = 0; ipk < PEAKS->nPk; ipk++) {
+    for(ipk = 0; ipk < npk; ipk++) {
         // if first peak, set "start" to 0.
 
         // if last peak, set "stop" to "length". or, in peak detection,
@@ -142,6 +148,72 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
         }
     }
 }
+
+// void shaper_peaks(double *input, double *filter, size_t length, pk_t *PEAKS)
+// {
+//     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
+//      filtering parameters on data. */
+
+//       /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
+//      * rise time, l is the delay of peak, l-k is the flat-top duration, M
+//      * is the decay time constant (in number of samples) of the input
+//      * pulse.  Set M=-1.0 to deal with a step-like input function.
+//      */
+//     size_t l, k, ipk, start, stop, npk;
+//     ssize_t i, j, jk, jl, jkl, idx1 = 0;
+//     double M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
+    
+//     // fprintf(stderr, "l[0]: %zu\n", PEAKS->l[0]);
+//     // fprintf(stderr, "k[0]: %zu\n", PEAKS->k[0]);
+//     // fprintf(stderr, "M[0]: %f\n", PEAKS->M[0]);
+
+//     // fprintf(stderr, "input[1000]: %f\n", input[1000]);
+//     // fprintf(stderr, "input[5]: %f\n", input[5]);
+//     // fprintf(stderr, "input[8000]: %f\n", input[8000]);
+
+    
+
+//     for(ipk = 0; ipk < PEAKS->nPk - 1; ipk++) {
+//         // if first peak, set "start" to 0.
+
+//         // if last peak, set "stop" to "length". or, in peak detection,
+//         // set final RIGHT[] value to the end of the array,
+//         start = PEAKS->loc[ipk];
+//         stop = PEAKS->loc[ipk + 1];
+//         l = PEAKS->l[ipk];
+//         k = PEAKS->k[ipk];
+//         M = PEAKS->M[ipk];
+
+//         for(i = start; i < stop; i++) {
+//             j=i; jk = j-k; jl = j-l; jkl = j-k-l;
+    
+//     /*   "RESULT = CONDITION  ?     x      :     y      " 
+//             is a compact if-else statment, "ternary operator" */
+//             vj   = (j   >= 0) ? input[j]   : input[idx1];
+//             vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
+//             vjl  = (jl  >= 0) ? input[jl]  : input[idx1];
+//             vjkl = (jkl >= 0) ? input[jkl] : input[idx1];
+
+//             dkl = vj - vjk - vjl + vjkl;
+//             pp = pp + dkl;
+
+
+//             // commented out conditional for speed. if we do testing/use steps again, uncomment.
+//             // for real data, we should only have positive fall times.
+
+//             s = s + pp + dkl * M;
+//             // if(M >= 0.0) {
+//             //     s = s + pp + dkl * M;
+//             // }
+            
+//             // else {  //infinite decay time, so the input is a step function 
+//             //     s = s + dkl;
+//             // }
+            
+//             filter[i] = s / (fabs(M) * (double)k);
+//         }
+//     }
+// }
 
 void trapezoid(double *input, double *filter, size_t length, size_t k, size_t l, double M)
 {
