@@ -138,7 +138,7 @@ def peak_measure():
 	k = 10
 	threshold = 0.006
 	fudge = 5
-	shape_offset = 0
+	shape_offset = c_ulong(0)
 	minsep = 10
 
 	# exp = np.ones(10000, dtype=np.float64)*0.828
@@ -152,12 +152,29 @@ def peak_measure():
 
 	peaks = get_peaks(data, threshold, minsep)
 	M = get_tau(data, peaks, fudge)
-	
+
 	fig, ax = plt.subplots(1,1)
 	plot(data, ax)
 	ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
 	fig.show()
+	
+	# npk = len(peaks)
+	# LEFT = np.zeros(npk)
+	# RIGHT = np.zeros(npk)
 
+	# for i in np.arange(npk-1):
+	# 	LEFT[i] = peaks[i]
+	# 	RIGHT[i] = peaks[i+1]
+		
+	# LEFT +=	shape_offset
+	# RIGHT += shape_offset
+	# LEFT[0] = 0
+	# LEFT[npk-1] = peaks[npk-1]
+	# RIGHT[npk-1] = len(data)-1
+	# print 'number of peaks =', npk
+	# print 'LEFT = ', LEFT
+	# print 'RIGHT = ', RIGHT
+	
 	filt = shaper_peaks(data, peaks, l, k, M, shape_offset)
 	fig2, ax2 = plt.subplots(1,1)
 	plot(filt, ax2)

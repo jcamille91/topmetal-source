@@ -178,7 +178,7 @@ def get_tau(data, peaks, fudge):
 	
 	# input data and peak locations. return time constants and chi-square values
 	# for each corresponding peak so we can filter the peaks.
-	tau = np.zeros(len(peaks), dtype=np.float64)
+	tau = np.zeros(len(peaks), dtype=c_double)
 	chisq = np.zeros(len(peaks), dtype=np.float64)
 	avg = np.mean(data[:2000])
 	rms = np.std(data[:2000]) # measure rms of dataset for the lsq fit.
@@ -225,24 +225,31 @@ def shaper_peaks(data, peaks, l, k, M, offset):
 	npk = len(peaks)
 
 	# for now just fix l,k.
-	l = np.ones(npk)*25
-	k = np.ones(npk)*10
+	l = np.ones(npk, dtype=c_ulong)*100
+	k = np.ones(npk, dtype=c_ulong)*20
 
 	# put peak locations into left/right for the filter.
 	# offset left/rights of peak with 'off'. use negative sign
 	# to offset before the peak, positive for after the peak.
-	npk = len(peaks)
-	LEFT = np.zeros(npk)
-	RIGHT = np.zeros(npk)	
+	LEFT = np.zeros(npk, dtype=c_ulong)
+	RIGHT = np.zeros(npk, dtype=c_ulong)
 
-	for i in np.arange(npk)-1:
-		LEFT[i+1] = peaks[i]
-		RIGHT[i] = peaks[i]
+	for i in np.arange(npk-1):
+		LEFT[i] = peaks[i]
+		RIGHT[i] = peaks[i+1]
 		
 	LEFT +=	offset
 	RIGHT += offset
 	LEFT[0] = 0
+	LEFT[npk-1] = peaks[npk-1]
 	RIGHT[npk-1] = len(data)-1
+
+	print 'l', l
+	print 'k', k
+	print 'M', M
+	print 'number of peaks =', npk
+	print 'LEFT = ', LEFT
+	print 'RIGHT = ', RIGHT
 
 	PEAK = peaks_handle(npk, LEFT, RIGHT, l, k, M)
 	out = np.empty_like(data)
@@ -251,7 +258,7 @@ def shaper_peaks(data, peaks, l, k, M, offset):
 	lib.shaper_peaks.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t)]
 	lib.shaper_peaks(data, out, c_ulong(len(data)), byref(PEAK))
 
-	return out
+	return np.array(out)
 
 def savgol_scipy(array, npt, order):
 	
