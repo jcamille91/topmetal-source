@@ -11,6 +11,8 @@ import numpy.ctypeslib as npct
 # plotting tools
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
+from matplotlib import axes
+ax_class = axes.Axes
 
 # math/matrices, statistics, and fitting
 import numpy as np
@@ -18,20 +20,22 @@ from scipy.stats import chisquare
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks_cwt, convolve, savgol_filter
 
-# annoying/harmless warning when scipy tries to use some external library 
+# "harmless" warning when scipy tries to use some external library 
 # for least squares fitting. https://github.com/scipy/scipy/issues/5998
 import warnings
 warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
 
-# named tuples can be convenient for returning items from functions without needing
-# to remember indices/ordering.
+# named tuples are convenient for returning items from functions without needing
+# to specify indices/ordering.
 from collections import namedtuple
+wfm = namedtuple('wfm', 'avg rms data') #  waveform info.
+trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of peak detection algorithm.
 
 ### a note on the two types of python pointer functionalities used here ###
 # 1. use Ctypes 'POINTER' functionality for defining/building data structures
 # to use between C and Python.
 # 2. use Numpy.Ctypeslib's 'ndpointer' to easily pass and return
-# pointer-arrays between C and python for quick analysis of data in python environment.
+# data arrays between C and python for quick analysis in python environment.
 
 float_ptr = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
 sizet_ptr = npct.ndpointer(c_ulong, ndim=1, flags='CONTIGUOUS')
@@ -45,6 +49,12 @@ c_double_p = POINTER(c_double)
 class peaks_t(Structure):
 	_fields_ = [("nPk", c_ulong), ("LEFT", c_ulong_p), ("RIGHT", c_ulong_p),
 				("l", c_ulong_p), ("k", c_ulong_p), ("M", c_double_p)]
+# #class peak()
+# 	### stuff to put inside this class. ###
+# 	location
+# 	M
+# 	chisq
+# 	height
 
 def	peaks_handle(nPk, left, right, l, k, M):
 
@@ -58,21 +68,49 @@ def	peaks_handle(nPk, left, right, l, k, M):
 	M_p = M.ctypes.data_as(c_double_p)
 	return peaks_t(nPk, left_p, right_p, l_p, k_p, M_p)
 
-# make a peak Ctypes structure for trapezoidal filtering. "Structure" is from Ctypes.
-# changes from peak to peak.
-# class pk_t(Structure):
-# 	_fields_ = [("nPk", c_ulong), ("loc", c_ulong_p),
-# 				("l", c_ulong_p), ("k", c_ulong_p), ("M", c_double_p)]
-# def pk_hdl(nPk, loc, l, k, M):
-
-# 	nPk = c_ulong(nPk)
-# 	loc_p = loc.ctypes.data_as(c_ulong_p)
-# 	l_p = l.ctypes.data_as(c_ulong_p)
-# 	k_p = k.ctypes.data_as(c_ulong_p)
-# 	M_p = M.ctypes.data_as(c_double_p)
-# 	return pk_t(nPk, loc_p, l_p, k_p, M_p)
+	# simple three parameter decaying exponential model for fitting.
+def model_func(x, A, l, off) :
+	return ( A * np.exp( -l * (x) ) ) + off
 
 
+
+def get_wfm(file, ch, npt, plt) :
+
+	""" get data for a channel and calculate its average and root mean square. 
+	npt defaults to max value (25890 for current dataset) for zero input or too large of input."""
+	data = pull_one(file, ch)
+
+	avg = np.mean(data[:npt])
+	rms = np.std(data[:npt])
+
+	if plt == True :
+		print 'average = ', avg, 'Volts'
+		print 'sigma = ', rms, 'Volts RMS'
+		plotter(data)
+
+
+	return wfm(avg=avg, rms=rms, data=data)
+
+def get_wfm_all(file, npt) :
+
+	""" get data for 72*72 sensor and calculate each channel's average and root mean square voltage. 
+	npt defaults to max value (25890 for current dataset) for zero input or too large of input."""
+
+	nch = 72**2
+	avg = np.zeros(nch)
+	rms = np.zeros(nch)
+
+	data = pull_all(file)
+	length = len(data[0])
+
+	if ((npt == False) or (npt > length)) :
+		print 'set calculation length to raw data array length =', length 
+		npt = length
+	for i in np.arange(nch) :
+		avg = np.mean(data[i])
+		rms = np.std(data[i])
+
+	return wfm(avg=avg, rms=rms, data=data)
 
 
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -115,19 +153,17 @@ def savgol_gsl(data, order, der, window):
 	ret = lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
 	return np.array(filt)
 
-def get_peaks(data, threshold, minsep):
+def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 
-	# 'threshold' in volts above the average signal value
-	# 'minsep' minimum number of samples between peaks. 
-	#  peaks closer than minsep are discarded.
+	"""'threshold' in volts above the average signal value
+	'minsep' minimum number of samples between peaks. 
+	peaks closer than minsep are discarded."""
 
 	# sign = 1 does positive data with peaks, sign = -1 does negative data with valleys
 	sign = 1
-	trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm')
 
 	Y = data
-	filt = savgol_scipy(data, 15, 4)
-	mean = np.mean(data[:2000])
+	filt = savgol_scipy(data, sgwin, sgorder)
 	kernel = [1, 0, -1]
 	
 	# get derivative
@@ -174,27 +210,24 @@ def get_peaks(data, threshold, minsep):
 	# return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=peaks, toss=toss, pkm=peaks_minsep)
 	return peaks_minsep
 
-def get_tau(data, peaks, fudge):
+def fit_tau(data, peaks, fudge, fit_length, ax) :
 	
 	# input data and peak locations. return time constants and chi-square values
 	# for each corresponding peak so we can filter the peaks.
 	tau = np.zeros(len(peaks), dtype=c_double)
-	chisq = np.zeros(len(peaks), dtype=np.float64)
+	chisq = np.zeros(len(peaks), dtype=c_double)
 	avg = np.mean(data[:2000])
 	rms = np.std(data[:2000]) # measure rms of dataset for the lsq fit.
 	#rms = 0.003 # can fix this to a few mV if we are getting weird results.
 	
 	# assumption: data is modeled by a 3 parameter decaying exponential.
 	M = 3
-	def model(x, A, l, off) :
-		return ( A * np.exp( -l * (x) ) ) + off
 
 	# 			   PARAMETER FORMAT: ([A, l, off]
 	#				 MIN 					MAX
-	bounds = ([0.0, 1.0/50, avg], [0.03, 1.0/10, avg+0.3])
+	bounds = ([0.0, 1.0/100, avg], [0.03, 1.0/10, avg+0.3])
 	guess = [0.008, 1.0/35, avg]
 	
-	fit_length = 100
 	# use fit_length if the peaks are far away. if they are close, 
 	# fit only as much data as is available between peaks.
 	npk = len(peaks)
@@ -207,20 +240,29 @@ def get_tau(data, peaks, fudge):
 			yi = data[peaks[j]:peaks[j]+fit_length]
 		N=len(yi)
 		xi = np.arange(N)	
-		par, cov = curve_fit(f=model, xdata=xi, ydata=yi, p0=guess, \
+		par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
 				             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
 				             bounds=bounds, method='trf')
 
-		f_xi = model(xi, *par)
+		f_xi = model_func(xi, *par)
 		Xsq, P = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
 		
 		tau[j] = 1.0/par[1]
 		chisq[j] = Xsq
 	
+		if isinstance(ax, ax_class):
+			ax.scatter(xi+peaks[j],model_func(xi,*par), marker = 'o')
+
+
+
 	return tau
 	#return (tau, chisq)
 
 def shaper_peaks(data, peaks, l, k, M, offset):
+
+
+	### this is broken for an array of only one peak. and zero. ####
+
 
 	npk = len(peaks)
 
@@ -238,11 +280,11 @@ def shaper_peaks(data, peaks, l, k, M, offset):
 		LEFT[i] = peaks[i]
 		RIGHT[i] = peaks[i+1]
 		
-	LEFT +=	offset
-	RIGHT += offset
+	# LEFT -=	offset
+	# RIGHT -= offset
 	LEFT[0] = 0
 	LEFT[npk-1] = peaks[npk-1]
-	RIGHT[npk-1] = len(data)-1
+	RIGHT[npk-1] = len(data)
 
 	print 'l', l
 	print 'k', k

@@ -93,25 +93,21 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
      * is the decay time constant (in number of samples) of the input
      * pulse.  Set M=-1.0 to deal with a step-like input function.
      */
-    size_t l, k, ipk, start, stop;
+    size_t l, k, ipk, start, stop, z;
     ssize_t i, j, jk, jl, jkl, idx1 = 0;
     double M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     
-    fprintf(stderr, "l[4]: %zu\n", PEAKS->l[4]);
-    fprintf(stderr, "k[0]: %zu\n", PEAKS->k[0]);
-    fprintf(stderr, "M[5]: %f\n", PEAKS->M[5]);
+    for (z = 0; z<PEAKS->nPk; z++) {
+    fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
+    fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
+    fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
+    }
 
-    fprintf(stderr, "input[1000]: %f\n", input[1000]);
-    fprintf(stderr, "input[5]: %f\n", input[5]);
-    fprintf(stderr, "input[8000]: %f\n", input[8000]);
 
 
     for(ipk = 0; ipk < PEAKS->nPk; ipk++) {
-        // if first peak, set "start" to 0.
 
-        // if last peak, set "stop" to "length". or, in peak detection,
-        // set final RIGHT[] value to the end of the array,
-        start = PEAKS->LEFT[ipk];
+        start = PEAKS->LEFT[ipk]; // maybe this problem has something to do with setting these variable instead of using directly????
         stop = PEAKS->RIGHT[ipk];
         l = PEAKS->l[ipk];
         k = PEAKS->k[ipk];
@@ -146,7 +142,6 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
             filter[i] = s / (fabs(M) * (double)k);
         }
     }
-    filter[length-1] = 0;
 }
 
 // void shaper_peaks(double *input, double *filter, size_t length, pk_t *PEAKS)

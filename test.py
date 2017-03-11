@@ -1,5 +1,35 @@
 from util import *
 
+def sensor_noise(npt, threshold):
+	
+	noise = namedtuple('noise', 'data rms thresh')
+
+	# ch 0-2 are dead channels for demux
+	dead = 3
+	infile = '../data_TM1x1/demuxdouble.h5'
+	a = pull_all(infile)
+	length = len(a[0])
+
+	if ((npt == False) or (npt > length)) :
+		print 'set calculation length to raw data array length =', length 
+		npt = length
+
+	rms = np.zeros(72**2-dead) # this array only goes from 0-5180, exlude first three pixels for calc.
+	for i in np.arange(72**2-dead)+dead :
+		rms[i-3] = np.std(a[i][:npt])
+
+	thresh_i = np.where(rms > threshold)[0] + dead
+	
+	print 'max rms', np.amax(rms)
+	print 'min rms', np.amin(rms)
+	print 'avg rms', np.mean(rms)
+	print 'channels above', threshold, 'volts RMS' 
+	print thresh_i
+
+	return noise(data=a, rms=rms, thresh=thresh_i)
+
+
+
 def dmux_input():
 	# let's input a known signal to see if the demux is working.
 
@@ -81,7 +111,7 @@ def send_struct():
 
 	lib.read_struct(byref(peak))
 
-def send_peaks():
+def send_peaks(l, k, res, fit_length):
 
 			### TEST THIS NEXT ###
 
@@ -90,6 +120,8 @@ def send_peaks():
 	# if we switch l,k,M right at the beginning of a peak. if so, this could
 	# simplify specifying different lengths of filtering for quick successive peaks.
 	
+	# this works doing it right on the transition.
+
 			######################
 
 	# send an array of exponentials with expected tau and filter them with different M's using
@@ -97,33 +129,63 @@ def send_peaks():
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
 
+	M_i = np.array([30, 20, 10], dtype=np.float64)
+	M_f = np.array([30.174071, 20.090518, 10.859501], dtype=np.float64)
+	M_loc = np.array([1, 5000, 8000])
+	M_a = np.array([0.01, 0.008, 0.011])
+	npk = len(M_i)
+	M_npt = res
+	#M_npt = 100
+
+	data_len = 10000
+	noise = 0
+	baseline = 0.0
 	# build an array with some exponentials with known time constants
-	exp = np.ones(10000, dtype=c_double)*0.828
-	exp[1000:2000] += 0.01*np.exp(-(1.0/40)*np.linspace(0, 999,1000))	
-	exp[5000:6000] += 0.008*np.exp(-(1.0/70)*np.linspace(0, 999,1000))
-	exp[8000:9000] += 0.011*np.exp(-(1.0/100)*np.linspace(0, 999,1000))
+	exp = np.ones(data_len, dtype=np.float64)*baseline
+	for i in np.arange(npk) :
+		exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
+	# exp[1000:2000] += 0.01*np.exp(-(1.0/M_i[0])*np.linspace(0, 999,1000))	
+	# exp[5000:6000] += 0.008*np.exp(-(1.0/M_i[1])*np.linspace(0, 999,1000))
+	# exp[8000:9000] += 0.011*np.exp(-(1.0/M_i[2])*np.linspace(0, 999,1000))
+	peaks = get_peaks(exp, 0.828, 0, 50, 15, 4)
+	tau = fit_tau(exp, peaks, 0, fit_length, 0)
 
-	LEFT = (np.array([0,3000,7000], dtype = c_ulong))
-	RIGHT = (np.array([3000,7000,len(exp)-1], dtype = c_ulong))
-	l = (np.array([100,100,100], dtype = c_ulong))
-	k = (np.array([20,20,20], dtype = c_ulong))
-	M = (np.array([40.0,70.0,100.0], dtype = c_double))
-
-	PEAK = peaks_handle(len(LEFT), LEFT, RIGHT, l, k, M)
+	print 'peak found at:', peaks
+	print 'corresponding m:', tau
+	exp += noise
+	LEFT = (np.array([0,5000,8000], dtype = c_ulong))
+	RIGHT = (np.array([5000,8000,len(exp)], dtype = c_ulong))
+	l_arr = (l*np.ones(npk, dtype = c_ulong))
+	k_arr = (k*np.ones(npk, dtype = c_ulong))
+	# l = (np.array([200,200,200], dtype = c_ulong))
+	# k = (np.array([100,100,100], dtype = c_ulong))
+	#M = (np.array(input, dtype = c_double))
+	#M = (np.array([41.0,71.0,101.0], dtype = c_double))
+	M = M_f
+	PEAK = peaks_handle(len(LEFT), LEFT, RIGHT, l_arr, k_arr, M)
 	out = np.empty_like(exp)
 	lib = CDLL("shaper.so")
 	lib.shaper_peaks.restype = None
 	lib.shaper_peaks.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t)]
 	lib.shaper_peaks(exp, out, c_ulong(len(exp)), byref(PEAK))
-	axis2.axis([0, 9999,0, 0.012])
+	#axis2.axis([0, 9999,0, 0.012])
 	plot(exp, axis)
 	plot(out, axis2)
 	fig.show()
 	fig2.show()
+	return (exp , np.array(out))
 
-def peak_measure():
+def test_all() :
+	
+	infile = '../data_TM1x1/demuxdouble.h5'
+	d = get_wfm_all(infile)
 
-	# fudge(get_tau), minsep(get peaks), and off(shaper peaks) 
+
+def test_one(ch) :
+
+	infile = '../data_TM1x1/demuxdouble.h5'
+
+	# fudge(fit_tau), minsep(get peaks), and off(shaper peaks) 
 	# can cause problems, need to make them work together
 
 	# build an array with some exponentials with known time constants
@@ -134,12 +196,13 @@ def peak_measure():
 	
 	# minsep must be greater than fudge
 
-	l = 25
-	k = 10
+	l = 1000
+	k = 100
 	threshold = 0.006
-	fudge = 5
-	shape_offset = c_ulong(0)
+	fudge = 0
+	shape_offset = c_ulong(5)
 	minsep = 10
+	fit_length = 100  # no more than about 3x the expected tau
 
 	# exp = np.ones(10000, dtype=np.float64)*0.828
 	# exp[1000:2000] += 0.01*np.exp(-(1.0/10)*np.arange(1000))	
@@ -148,40 +211,32 @@ def peak_measure():
  # 	noise = 0
  # 	exp = exp + noise
 
- 	data = pull_one('../data_TM1x1/demuxdouble.h5', 100)
+ 	d = get_wfm(file=infile, ch=ch, npt=25889, plt=False)
+ 	data = d.data
+ 	threshold = 4*d.rms
+	peaks = get_peaks(data, d.avg, threshold, minsep, 15, 4)
 
-	peaks = get_peaks(data, threshold, minsep)
-	M = get_tau(data, peaks, fudge)
+	if len(peaks) > 0 :
+		fig, ax = plt.subplots(1,1)
+		plot(data, ax)
+		ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
 
-	fig, ax = plt.subplots(1,1)
-	plot(data, ax)
-	ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
-	fig.show()
+		M = fit_tau(data, peaks, fudge, fit_length, ax)
+
+		fig.show()
 	
-	# npk = len(peaks)
-	# LEFT = np.zeros(npk)
-	# RIGHT = np.zeros(npk)
+		filt = shaper_peaks(data, peaks, l, k, M, shape_offset)
+		fig2, ax2 = plt.subplots(1,1)
+		plot(filt, ax2)
+		ax2.scatter(peaks, filt[peaks], marker='x', color='r', s=40)
+		fig2.show()
 
-	# for i in np.arange(npk-1):
-	# 	LEFT[i] = peaks[i]
-	# 	RIGHT[i] = peaks[i+1]
-		
-	# LEFT +=	shape_offset
-	# RIGHT += shape_offset
-	# LEFT[0] = 0
-	# LEFT[npk-1] = peaks[npk-1]
-	# RIGHT[npk-1] = len(data)-1
-	# print 'number of peaks =', npk
-	# print 'LEFT = ', LEFT
-	# print 'RIGHT = ', RIGHT
-	
-	filt = shaper_peaks(data, peaks, l, k, M, shape_offset)
-	fig2, ax2 = plt.subplots(1,1)
-	plot(filt, ax2)
-	ax2.scatter(peaks, filt[peaks], marker='x', color='r', s=40)
-	fig2.show()
+		return (peaks, M)
 
-	return (peaks, M)
+	else :
+		print 'No peaks found in this channel.'
+
+	#return (peaks, M)
 
 def trigger():
 
@@ -190,17 +245,20 @@ def trigger():
 	threshold = 0.006
 	minsep = 5
 	infile = '../data_TM1x1/demuxdouble.h5'
+	sgwin = 15
+	sgorder = 4
+
 	fig, axis = plt.subplots(1,1)
-	data = pull_one(infile, 1321)
-	peaks = get_peaks(data, threshold, minsep)
+	d = get_wfm(infile, 1321, 25890, False)
+	peaks = get_peaks(d.data, d.avg, threshold, minsep, sgwin, sgorder)
 
 	fig, ax = plt.subplots(1,1)
-	plot(data, ax)
-	ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
+	plot(d.data, ax)
+	ax.scatter(peaks, d.data[peaks], marker='x', color='r', s=40)
 	fig.show()
 
 
-def test(pixel, pk, fit_length, l, k):
+def oldtest(pixel, pk, fit_length, l, k):
 
 	# for fitting and filtering, do a conditional:
 
