@@ -107,8 +107,8 @@ def get_wfm_all(file, npt) :
 		print 'set calculation length to raw data array length =', length 
 		npt = length
 	for i in np.arange(nch) :
-		avg = np.mean(data[i])
-		rms = np.std(data[i])
+		avg[i] = np.mean(data[i])
+		rms[i] = np.std(data[i])
 
 	return wfm(avg=avg, rms=rms, data=data)
 
@@ -123,20 +123,6 @@ def smooth(infile, outfile, l, k, M):
    lib = CDLL("shaper.so")
    lib.shaper.argtypes = [c_char_p, c_char_p, c_ulong, c_ulong, c_double]
    lib.shaper(c_char_p(infile), c_char_p(outfile), c_ulong(l), c_ulong(k), c_double(M))
-
-def shaper_np(data, l, k, M):
-	# apply trapezoidal filter to a numpy array, return the numpy array 
-	# for quick analysis / plotting.
-
-	# import the library
-	lib = CDLL("shaper.so")
-	lib.trapezoid.restype = None
-						  # 	  in 		out   	 length  	l  		k 		  M
-	lib.trapezoid.argtypes = [float_ptr, float_ptr, c_ulong, c_ulong, c_ulong, c_double]
-	# allocate an array to hold output.
-	filt = np.empty_like(data)
-	lib.trapezoid(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M))
-	return np.array(filt)
 
 def savgol_gsl(data, order, der, window):
 	# BROKEN 2/13/2017
@@ -162,8 +148,8 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 	# sign = 1 does positive data with peaks, sign = -1 does negative data with valleys
 	sign = 1
 
-	Y = data
 	filt = savgol_scipy(data, sgwin, sgorder)
+	Y = filt
 	kernel = [1, 0, -1]
 	
 	# get derivative
@@ -184,41 +170,43 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 	elif (sign == -1) :
 		candidates = np.where(dY < 0)[0] + (len(kernel)-1)
 
-	peaks = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
+	pk = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
 	alpha = mean + (sign * threshold)
 
 	if (sign == 1) :
-		peaks = np.array(peaks)[Y[peaks] > alpha]
+		pk = np.array(pk)[Y[pk] > alpha]
 	elif (sign == -1) :
-		peaks = np.array(peaks)[Y[peaks] < alpha]
+		pk = np.array(pk)[Y[pk] < alpha]
 
-	# remove peaks within the minimum separation... can do this in a smarter way.
-	#minsep = 5
+	# remove peaks within the minimum separation... can do this smarter.
 	toss = np.array([0])
-	for i in np.arange(len(peaks)-1) :
+	for i in np.arange(len(pk)-1) :
 		# if the peaks are closer than the minimum separation and the second peak is
 		# larger than the first, throw out the first peak. 
-		if ((peaks[i+1]-peaks[i]) < minsep) :
+		if ((pk[i+1]-pk[i]) < minsep) :
 		#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
 			toss = np.append(toss, i+1)
 
 	# remove junk element we left to initialize array.
 	toss = np.delete(toss, 0)
-	peaks_minsep = np.delete(peaks, toss)
+	pkm = np.delete(pk, toss)
+
+	# cons = 5 # consecutively increasing values preceeding a peak
+	# for j in np.arange(len(pkm))
+	# 	for k in np.arange(cons)
 
 	# use the 'trig' namedtuple for debugging / accessing each step of the peak detection.
-	# return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=peaks, toss=toss, pkm=peaks_minsep)
-	return peaks_minsep
+	#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
+	return pkm
 
-def fit_tau(data, peaks, fudge, fit_length, ax) :
-	
-	# input data and peak locations. return time constants and chi-square values
-	# for each corresponding peak so we can filter the peaks.
+def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
+	"""
+	supply a an axis from fig, ax = plot.subplots(y,y) to 
+	superimpose a scatterplot of the fitted data onto the original data.
+
+	"""
 	tau = np.zeros(len(peaks), dtype=c_double)
 	chisq = np.zeros(len(peaks), dtype=c_double)
-	avg = np.mean(data[:2000])
-	rms = np.std(data[:2000]) # measure rms of dataset for the lsq fit.
-	#rms = 0.003 # can fix this to a few mV if we are getting weird results.
 	
 	# assumption: data is modeled by a 3 parameter decaying exponential.
 	M = 3
@@ -230,8 +218,12 @@ def fit_tau(data, peaks, fudge, fit_length, ax) :
 	
 	# use fit_length if the peaks are far away. if they are close, 
 	# fit only as much data as is available between peaks.
+
+	# exact peak location is fuzzy in presence of noise, so
+	# include a 'fudge factor' to improve fit for consecutive peaks.
+
 	npk = len(peaks)
-	end = len(data)-1
+	end = len(data)-1 
 	peaks = np.append(peaks, end) 
 	for j in np.arange(npk) :
 		if peaks[j+1]-peaks[j] < fit_length : 
@@ -251,14 +243,14 @@ def fit_tau(data, peaks, fudge, fit_length, ax) :
 		chisq[j] = Xsq
 	
 		if isinstance(ax, ax_class):
-			ax.scatter(xi+peaks[j],model_func(xi,*par), marker = 'o')
+			ax.scatter(xi+peaks[j],model_func(xi,*par), marker='o')
 
 
 
 	return tau
 	#return (tau, chisq)
 
-def shaper_peaks(data, peaks, l, k, M, offset):
+def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
 
 	### this is broken for an array of only one peak. and zero. ####
@@ -286,21 +278,35 @@ def shaper_peaks(data, peaks, l, k, M, offset):
 	LEFT[npk-1] = peaks[npk-1]
 	RIGHT[npk-1] = len(data)
 
-	print 'l', l
-	print 'k', k
-	print 'M', M
-	print 'number of peaks =', npk
-	print 'LEFT = ', LEFT
-	print 'RIGHT = ', RIGHT
+	# print 'l', l
+	# print 'k', k
+	# print 'M', M
+	# print 'number of peaks =', npk
+	# print 'LEFT = ', LEFT
+	# print 'RIGHT = ', RIGHT
 
 	PEAK = peaks_handle(npk, LEFT, RIGHT, l, k, M)
 	out = np.empty_like(data)
 	lib = CDLL("shaper.so")
-	lib.shaper_peaks.restype = None
-	lib.shaper_peaks.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t)]
-	lib.shaper_peaks(data, out, c_ulong(len(data)), byref(PEAK))
+	lib.shaper_multi.restype = None
+	lib.shaper_multi.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t), c_double]
+	lib.shaper_multi(data, out, c_ulong(len(data)), byref(PEAK), c_double(baseline))
 
 	return np.array(out)
+
+def shaper_single(data, l, k, M):
+	# apply trapezoidal filter to a numpy array, return the numpy array 
+	# for quick analysis / plotting.
+
+	# import the library
+	lib = CDLL("shaper.so")
+	lib.shaper_single.restype = None
+						  # 	     in 		out   	  length  	 l  		k 		  M
+	lib.shaper_single.argtypes = [double_ptr, double_ptr, c_ulong, c_ulong, c_ulong, c_double]
+	# allocate an array to hold output.
+	filt = np.empty_like(data)
+	lib.shaper_single(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M))
+	return np.array(filt)
 
 def savgol_scipy(array, npt, order):
 	

@@ -83,7 +83,7 @@ void read_struct(peaks_t *input){
 
 }
 
-void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
+void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, double baseline)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */
@@ -97,17 +97,20 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
     ssize_t i, j, jk, jl, jkl, idx1 = 0;
     double M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     
-    for (z = 0; z<PEAKS->nPk; z++) {
-    fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
-    fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
-    fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
-    }
+    // use this loop to display that filter parameters are being
+    // received correctly
+
+    // for (z = 0; z<PEAKS->nPk; z++) {
+    // fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
+    // fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
+    // fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
+    // }
 
 
 
     for(ipk = 0; ipk < PEAKS->nPk; ipk++) {
 
-        start = PEAKS->LEFT[ipk]; // maybe this problem has something to do with setting these variable instead of using directly????
+        start = PEAKS->LEFT[ipk];
         stop = PEAKS->RIGHT[ipk];
         l = PEAKS->l[ipk];
         k = PEAKS->k[ipk];
@@ -118,10 +121,10 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
     
     /*   "RESULT = CONDITION  ?     x      :     y      " 
             is a compact if-else statment, "ternary operator" */
-            vj   = (j   >= 0) ? input[j]   : input[idx1];
-            vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
-            vjl  = (jl  >= 0) ? input[jl]  : input[idx1];
-            vjkl = (jkl >= 0) ? input[jkl] : input[idx1];
+            vj   = (j   >= 0) ? input[j]   : baseline;
+            vjk  = (jk  >= 0) ? input[jk]  : baseline;
+            vjl  = (jl  >= 0) ? input[jl]  : baseline;
+            vjkl = (jkl >= 0) ? input[jkl] : baseline;
 
             dkl = vj - vjk - vjl + vjkl;
             pp = pp + dkl;
@@ -144,73 +147,7 @@ void shaper_peaks(double *input, double *filter, size_t length, peaks_t *PEAKS)
     }
 }
 
-// void shaper_peaks(double *input, double *filter, size_t length, pk_t *PEAKS)
-// {
-//     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
-//      filtering parameters on data. */
-
-//       /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
-//      * rise time, l is the delay of peak, l-k is the flat-top duration, M
-//      * is the decay time constant (in number of samples) of the input
-//      * pulse.  Set M=-1.0 to deal with a step-like input function.
-//      */
-//     size_t l, k, ipk, start, stop, npk;
-//     ssize_t i, j, jk, jl, jkl, idx1 = 0;
-//     double M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
-    
-//     // fprintf(stderr, "l[0]: %zu\n", PEAKS->l[0]);
-//     // fprintf(stderr, "k[0]: %zu\n", PEAKS->k[0]);
-//     // fprintf(stderr, "M[0]: %f\n", PEAKS->M[0]);
-
-//     // fprintf(stderr, "input[1000]: %f\n", input[1000]);
-//     // fprintf(stderr, "input[5]: %f\n", input[5]);
-//     // fprintf(stderr, "input[8000]: %f\n", input[8000]);
-
-    
-
-//     for(ipk = 0; ipk < PEAKS->nPk - 1; ipk++) {
-//         // if first peak, set "start" to 0.
-
-//         // if last peak, set "stop" to "length". or, in peak detection,
-//         // set final RIGHT[] value to the end of the array,
-//         start = PEAKS->loc[ipk];
-//         stop = PEAKS->loc[ipk + 1];
-//         l = PEAKS->l[ipk];
-//         k = PEAKS->k[ipk];
-//         M = PEAKS->M[ipk];
-
-//         for(i = start; i < stop; i++) {
-//             j=i; jk = j-k; jl = j-l; jkl = j-k-l;
-    
-//     /*   "RESULT = CONDITION  ?     x      :     y      " 
-//             is a compact if-else statment, "ternary operator" */
-//             vj   = (j   >= 0) ? input[j]   : input[idx1];
-//             vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
-//             vjl  = (jl  >= 0) ? input[jl]  : input[idx1];
-//             vjkl = (jkl >= 0) ? input[jkl] : input[idx1];
-
-//             dkl = vj - vjk - vjl + vjkl;
-//             pp = pp + dkl;
-
-
-//             // commented out conditional for speed. if we do testing/use steps again, uncomment.
-//             // for real data, we should only have positive fall times.
-
-//             s = s + pp + dkl * M;
-//             // if(M >= 0.0) {
-//             //     s = s + pp + dkl * M;
-//             // }
-            
-//             // else {  //infinite decay time, so the input is a step function 
-//             //     s = s + dkl;
-//             // }
-            
-//             filter[i] = s / (fabs(M) * (double)k);
-//         }
-//     }
-// }
-
-void trapezoid(double *input, double *filter, size_t length, size_t k, size_t l, double M)
+void shaper_single(double *input, double *filter, size_t length, size_t k, size_t l, double M)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */
@@ -234,7 +171,7 @@ void trapezoid(double *input, double *filter, size_t length, size_t k, size_t l,
     fprintf(stderr, "in[1001]: %f\n", input[1000]);
     */
 
-    for(i = 0; i < length-1; i++) {
+    for(i = 0; i < length; i++) {
         j=i; jk = j-k; jl = j-l; jkl = j-k-l;
 /*   "RESULT = CONDITION  ?     x      :     y      " 
         is a compact if-else statment, "ternary operator" */
@@ -257,7 +194,7 @@ void trapezoid(double *input, double *filter, size_t length, size_t k, size_t l,
         filter[i] = s / (fabs(M) * (double)k);
     }
 }
-void shaper(char *inFileName, char *outFileName, size_t k, size_t l, double M)
+void shaper_hdf5(char *inFileName, char *outFileName, size_t k, size_t l, double M)
 {
 
     /* Trapezoidal filter as in Knoll NIMA 345(1994) 337-345.  k is the
@@ -401,7 +338,7 @@ int main()
 //shaper("../data_TM1x1/out22_dmux.h5", "../data_TM1x1/out22_filter.h5", 10, 20, 40);
 //shaper("../data_TM1x1/step_dmux.h5", "../data_TM1x1/step_filter.h5", 10, 20, -1);
 
-shaper("../data_TM1x1/exp.h5", "../data_TM1x1/exp_filter.h5", 10, 20, 40);
+shaper_hdf5("../data_TM1x1/exp.h5", "../data_TM1x1/exp_filter.h5", 10, 20, 40);
 return EXIT_SUCCESS;
 
 }
