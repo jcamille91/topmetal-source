@@ -83,7 +83,7 @@ void read_struct(peaks_t *input){
 
 }
 
-void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, double baseline)
+void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, double baseline, size_t offset)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */
@@ -95,7 +95,7 @@ void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, 
      */
     size_t l, k, ipk, start, stop, z;
     ssize_t i, j, jk, jl, jkl, idx1 = 0;
-    double M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
+    double out, neg, M, vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
     
     // use this loop to display that filter parameters are being
     // received correctly
@@ -134,6 +134,17 @@ void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, 
             // for real data, we should only have positive fall times.
 
             s = s + pp + dkl * M;
+            
+            // let's try a condition for no negative value filter...
+            // neg = 0;
+            // out = s/(fabs(M) * (double)k);
+            // if ( out < neg ) {
+            //     // s = 0;
+            //     // pp = 0; 
+            //     filter[i] = 0;
+            // }
+            // else {
+
             // if(M >= 0.0) {
             //     s = s + pp + dkl * M;
             // }
@@ -142,12 +153,13 @@ void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, 
             //     s = s + dkl;
             // }
             
-            filter[i] = s / (fabs(M) * (double)k);
+                filter[i] = s/(fabs(M) * (double)k);
+            //}
         }
     }
 }
 
-void shaper_single(double *input, double *filter, size_t length, size_t k, size_t l, double M)
+void shaper_single(double *input, double *filter, size_t length, size_t k, size_t l, double M, double baseline)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */
@@ -175,10 +187,10 @@ void shaper_single(double *input, double *filter, size_t length, size_t k, size_
         j=i; jk = j-k; jl = j-l; jkl = j-k-l;
 /*   "RESULT = CONDITION  ?     x      :     y      " 
         is a compact if-else statment, "ternary operator" */
-        vj   = (j   >= 0) ? input[j]   : input[idx1];
-        vjk  = (jk  >= 0) ? input[jk]  : input[idx1];
-        vjl  = (jl  >= 0) ? input[jl]  : input[idx1];
-        vjkl = (jkl >= 0) ? input[jkl] : input[idx1];
+        vj   = (j   >= 0) ? input[j]   : baseline;
+        vjk  = (jk  >= 0) ? input[jk]  : baseline;
+        vjl  = (jl  >= 0) ? input[jl]  : baseline;
+        vjkl = (jkl >= 0) ? input[jkl] : baseline;
 
         dkl = vj - vjk - vjl + vjkl;
         pp = pp + dkl;
@@ -203,22 +215,6 @@ void shaper_hdf5(char *inFileName, char *outFileName, size_t k, size_t l, double
      * pulse.  Set M=-1.0 to deal with a step-like input function.
      */
 
-
-    /*  in this stage, we want L/R for each peak. at a higher level
-    we could choose different ways to calculate L/R based on a window and peak center.
-    but maybe it won't be symmetric since the rise and fall times are not.
-
-    then we could use a struct with multiple parallel arrays.
-
-    i guess the question is how many samples before the rise time do we need for a 
-    good shaping of the pulse to estimate the height and width. and what amplitude do we expect
-    from the pulse?  does it represent the actual peak of the original exponential or something else?
-
-    in CTypes, we can use the structure functionality, with the pointer/byref() functionality to pass
-    parallel arrays for peak locations.
-
-    POINTER(c_type) is a datatype for ctypes, we can use this inside of the Structure Class.
-    */
     size_t nEventsInFile;
     //size_t idx1; if this isn't signed, indices might do weird things. even though it should never be negative.
     ssize_t iCh, i, j, jk, jl, jkl, idx1;

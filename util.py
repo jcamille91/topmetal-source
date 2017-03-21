@@ -12,7 +12,10 @@ import numpy.ctypeslib as npct
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 from matplotlib import axes
-ax_class = axes.Axes
+ax_obj = axes.Axes
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
+
 
 # math/matrices, statistics, and fitting
 import numpy as np
@@ -28,7 +31,7 @@ warnings.filterwarnings(action="ignore", module="scipy", message="^internal gels
 # named tuples are convenient for returning items from functions without needing
 # to specify indices/ordering.
 from collections import namedtuple
-wfm = namedtuple('wfm', 'avg rms data') #  waveform info.
+wfm = namedtuple('wfm', 'avg rms data') #  waveform data + info.
 trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of peak detection algorithm.
 
 ### a note on the two types of python pointer functionalities used here ###
@@ -58,8 +61,9 @@ class peaks_t(Structure):
 
 def	peaks_handle(nPk, left, right, l, k, M):
 
-	# this function converts numpy arrays into the appropriate 
-	# pointers for the peaks_t structure
+	""" this function converts numpy arrays into the appropriate 
+		pointers for the peaks_t structure """
+
 	nPk = c_ulong(nPk)
 	left_p = left.ctypes.data_as(c_ulong_p)
 	right_p = right.ctypes.data_as(c_ulong_p)
@@ -73,8 +77,7 @@ def model_func(x, A, l, off) :
 	return ( A * np.exp( -l * (x) ) ) + off
 
 
-
-def get_wfm(file, ch, npt, plt) :
+def get_wfm_one(file, ch, npt, plt) :
 
 	""" get data for a channel and calculate its average and root mean square. 
 	npt defaults to max value (25890 for current dataset) for zero input or too large of input."""
@@ -201,19 +204,32 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 
 def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 	"""
-	supply a an axis from fig, ax = plot.subplots(y,y) to 
-	superimpose a scatterplot of the fitted data onto the original data.
+	inputs:
+	1. data: array containing pulses to fit
+	2. avg: baseline of the signal
+	3. rms: std dev of the signal
+	4. peaks: array of peak locations
+	5. fudge:  used in the case that there are consecutive peaks closer than the specified
+		fit length. 'fudge' moves current fit 'fudge' many data points back from next peak,
+		to try and ensure the following peak doesn't disturb the current peak's fit. 
+	6. fit_length: number of points data points used for least squares fit.
+		no more than about 3x expected tau is typical.
+	7. ax: supply a an axis from fig, ax = matplotlib.pyplot.subplots(y,y) to 
+		superimpose a scatterplot of the fitted data onto the original data.
 
+	return: array of fitted tau values. same length as number of input peaks.
 	"""
 	tau = np.zeros(len(peaks), dtype=c_double)
-	chisq = np.zeros(len(peaks), dtype=c_double)
-	
+	chisq = np.zeros(len(peaks), dtype=np.float64)
+	Q = np.zeros(len(peaks), dtype=np.float64)
+	P = np.zeros(len(peaks), dtype=np.float64)
+
 	# assumption: data is modeled by a 3 parameter decaying exponential.
 	M = 3
 
 	# 			   PARAMETER FORMAT: ([A, l, off]
 	#				 MIN 					MAX
-	bounds = ([0.0, 1.0/100, avg], [0.03, 1.0/10, avg+0.3])
+	bounds = ([0.0, 1.0/100, avg-0.3], [0.03, 1.0/10, avg+0.3])
 	guess = [0.008, 1.0/35, avg]
 	
 	# use fit_length if the peaks are far away. if they are close, 
@@ -225,6 +241,7 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 	npk = len(peaks)
 	end = len(data)-1 
 	peaks = np.append(peaks, end) 
+
 	for j in np.arange(npk) :
 		if peaks[j+1]-peaks[j] < fit_length : 
 			yi = data[peaks[j]:peaks[j+1]-fudge]
@@ -236,31 +253,39 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 				             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
 				             bounds=bounds, method='trf')
 
+		# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, \
+		# 		             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
+		# 		             bounds=bounds, method='trf')
+
+
 		f_xi = model_func(xi, *par)
-		Xsq, P = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
+		Xsq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
 		
 		tau[j] = 1.0/par[1]
 		chisq[j] = Xsq
-	
-		if isinstance(ax, ax_class):
+		P[j] = pval
+		Q[j] = 1-pval
+
+		# if axis object is provided, add the fit as scatter plot to the axis.
+		if isinstance(ax, ax_obj) :
 			ax.scatter(xi+peaks[j],model_func(xi,*par), marker='o')
 
 
 
 	return tau
-	#return (tau, chisq)
+	#return (tau, chisq, Q, P)
 
 def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
-
-	### this is broken for an array of only one peak. and zero. ####
-
+	""" apply trapezoidal filter to data. at each peak location provided, switch
+	to the desired filter parameters, l, k, M. also provide the average baseline of
+	the input data. l,k,M, should have as many elements as there are peaks. """
 
 	npk = len(peaks)
 
 	# for now just fix l,k.
-	l = np.ones(npk, dtype=c_ulong)*100
-	k = np.ones(npk, dtype=c_ulong)*20
+	l_arr = np.ones(npk, dtype=c_ulong)*l
+	k_arr = np.ones(npk, dtype=c_ulong)*k
 
 	# put peak locations into left/right for the filter.
 	# offset left/rights of peak with 'off'. use negative sign
@@ -269,11 +294,10 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 	RIGHT = np.zeros(npk, dtype=c_ulong)
 
 	for i in np.arange(npk-1):
-		LEFT[i] = peaks[i]
-		RIGHT[i] = peaks[i+1]
+		LEFT[i] = peaks[i]    # - offset
+		RIGHT[i] = peaks[i+1] # - offset
 		
-	# LEFT -=	offset
-	# RIGHT -= offset
+	
 	LEFT[0] = 0
 	LEFT[npk-1] = peaks[npk-1]
 	RIGHT[npk-1] = len(data)
@@ -285,7 +309,7 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 	# print 'LEFT = ', LEFT
 	# print 'RIGHT = ', RIGHT
 
-	PEAK = peaks_handle(npk, LEFT, RIGHT, l, k, M)
+	PEAK = peaks_handle(npk, LEFT, RIGHT, l_arr, k_arr, M)
 	out = np.empty_like(data)
 	lib = CDLL("shaper.so")
 	lib.shaper_multi.restype = None
@@ -294,18 +318,18 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
 	return np.array(out)
 
-def shaper_single(data, l, k, M):
+def shaper_single(data, l, k, M, baseline):
 	# apply trapezoidal filter to a numpy array, return the numpy array 
 	# for quick analysis / plotting.
 
 	# import the library
 	lib = CDLL("shaper.so")
 	lib.shaper_single.restype = None
-						  # 	     in 		out   	  length  	 l  		k 		  M
-	lib.shaper_single.argtypes = [double_ptr, double_ptr, c_ulong, c_ulong, c_ulong, c_double]
+						  # 	     in 		out   	  length  	 l  		k 		  M 	baseline
+	lib.shaper_single.argtypes = [double_ptr, double_ptr, c_ulong, c_ulong, c_ulong, c_double, c_double]
 	# allocate an array to hold output.
 	filt = np.empty_like(data)
-	lib.shaper_single(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M))
+	lib.shaper_single(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M), c_double(baseline))
 	return np.array(filt)
 
 def savgol_scipy(array, npt, order):
@@ -345,6 +369,9 @@ def pull_all(infile):
 
 	return data
 
+def close_figs():
+	plt.close("all")
+
 def plot(data, axis):
 	axis.step(np.arange(len(data)), data)
 
@@ -352,7 +379,39 @@ def plotter(data):
 	plt.step(np.arange(len(data)), data)
 	plt.show()
 
-#def img_plot(infile, point):
+def pixelate_single(data, sample):
+	""" Take 5184 channel x 25890 data point array and plot desired points in
+	time as 5184 pixel array """
+	# dark = min(data)
+	# bright = max(data)
+	timestep = (4*72**2)*(3.2*10**-8)
+	row = 72
+	#x1d = np.arange(row**2) # make array big enough to be square
+	data_2d = np.reshape(data[:,sample], (row, -1)) # convert to square matrix
+
+	fig, ax = plt.subplots()
+
+	# make bounds between -2mV and 10mV.
+	im = ax.imshow(data_2d, cmap=cm.afmhot, vmin=0.0, vmax=0.03)
+	fig.colorbar(im)
+	ax.grid(True)
+	fig.show()
+
+def pixelate_multi(data, start, stop)
+
+	timestep = (4*72**2)*(3.2*10**-8)
+	row = 72
+	stop - start = npt
+
+	for i in np.arange(npt)+start
+		fig, ax = plt.subplots()
+		data_2d = np.reshape(data[:,i], (row, -1)) # convert to square matrix
+		plt.imshow(data_2d, cmap=cm.afmhot)
+
+	im = ax.imshow(data_2d, cmap=cm.afmhot, vmin=0.0, vmax=0.03)
+	fig.colorbar(im)
+	ax.grid(True)
+	fig.show()
 
 def signal_plot(infile, pixel):
 	event = 'C0'

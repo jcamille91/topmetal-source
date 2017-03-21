@@ -111,91 +111,129 @@ def send_struct():
 
 	lib.read_struct(byref(peak))
 
-def send_peaks(l, k, res, fit_length):
+def send_peaks(l, k, res, fit_length, mV_noise):
 
-			### TEST THIS NEXT ###
-
-	# test a limiting case for filters working on the edge:
-	# see if the response looks good in the presence of noise / shifting baseline
-	# if we switch l,k,M right at the beginning of a peak. if so, this could
-	# simplify specifying different lengths of filtering for quick successive peaks.
-	
-	# this works doing it right on the transition.
-
-			######################
+	# clear figures from previous run.
+	close_figs()
 
 	# send an array of exponentials with expected tau and filter them with different M's using
 	# shaper_peaks in the shaper.c file.
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
 
-	M_i = np.array([30, 20, 10], dtype=np.float64)
-	M_f = np.array([30.174071, 20.090518, 10.859501], dtype=np.float64)
+	# specify M=tau, peak location, amplitude, and the number of points to define
+	# the peak.
+	M_i = np.array([30, 20, 40], dtype=np.float64)
 	M_loc = np.array([1000, 5000, 8000])
 	M_a = np.array([0.02, 0.015, 0.011])
 	npk = len(M_i)
 	M_npt = res
-	#M_npt = 100
 	baseline = 0.8
-	data_len = 10000
-	noise = np.random.normal(loc = 0, scale = .001, size=data_len)
-	#noise = 0
 
-	# build an array with some exponentials with known time constants
+	# parameters for peak detection.
+
+	sgorder = 4
+	sgwin = 15
+	minsep = 20
+
+	# make array big enough to accomodate peak location and size.
+	data_len = 10000
+
+	# apply rms noise to signal (input is in mV). if input is zero, no noise desired.
+	if mV_noise == 0 :
+		noise = 0
+	else :
+		noise = np.random.normal(loc = 0, scale = mV_noise*.001, size=data_len)
+
+	# build an array with exponential decays just defined above.
 	exp = np.ones(data_len, dtype=np.float64)*baseline
 	for i in np.arange(npk) :
 		exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
-	
-	# peaks = get_peaks(exp, 0.828, 0, 50, 15, 4)
-	# tau = fit_tau(exp, baseline, noise, peaks, 0, fit_length, 0)
-
-	# print 'peak found at:', peaks
-	# print 'corresponding m:', tau
 	exp += noise
+
+	# get the peaks. either use the locations defined above, or use get_peaks().
+	peaks = M_loc
+	# peaks = get_peaks(exp, baseline, mV_noise*0.001, minsep, sgwin, sgorder)
+
+	# fit time constants for pulses
+	tau = fit_tau(exp, baseline, mV_noise*0.001, peaks, 0, fit_length, axis)
+
+
+	# trapezoidal filter transitions currently set to edges of pulses.
 	LEFT = (np.array([0,5000,8000], dtype = c_ulong))
 	RIGHT = (np.array([5000,8000,len(exp)], dtype = c_ulong))
 	l_arr = (l*np.ones(npk, dtype = c_ulong))
 	k_arr = (k*np.ones(npk, dtype = c_ulong))
-	# l = (np.array([200,200,200], dtype = c_ulong))
-	# k = (np.array([100,100,100], dtype = c_ulong))
-	#M = (np.array(input, dtype = c_double))
-	#M = (np.array([41.0,71.0,101.0], dtype = c_double))
 	M = M_i
+	#M = tau[0]
+
 	PEAK = peaks_handle(len(LEFT), LEFT, RIGHT, l_arr, k_arr, M)
 	out = np.empty_like(exp)
 	lib = CDLL("shaper.so")
 	lib.shaper_multi.restype = None
 	lib.shaper_multi.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t), c_double]
 	lib.shaper_multi(exp, out, c_ulong(len(exp)), byref(PEAK), c_double(baseline))
-	#axis2.axis([0, 9999,0, 0.012])
+	
 	plot(exp, axis)
 	plot(out, axis2)
 	fig.show()
 	fig2.show()
-	return (exp , np.array(out))
+	print 'True time constants: \n'
+	for i in np.arange(npk) :
+		print 'Peak no.', i+1
+		print M_i[i]
+	print '\n'
+	print 'Fitted time constants: \n'
+	for i in np.arange(npk) :
+		print 'Peak no.', i+1
+		print 'tau = ', tau[0][i] 
+		print 'chi-square = ', tau[1][i]
+		print 'Q = ', tau[2][i]
+		print 'P = ', tau[3][i]
+		print '\n'
+	#return (exp , np.array(out))
 
-def test_all(npix) :
+def test_simple() :
 
-
-
-	### TEST FOR SHAPER: SET THE VALUE TO THE AVERAGE/BASELINE OF THE WAVEFORM.
-	### EXTRANEOUS ZERO VALUES MAY BE CAUSING DRIFT / PROBLEMS IN THE WAVEFORMS WE'RE SEEING.
-	
+	npix = 72**2
 	infile = '../data_TM1x1/demuxdouble.h5'
 	d = get_wfm_all(infile, 25890)
 	data = d.data
 	avg = d.avg
 	rms = d.rms
-	threshold = 0.005
-	minsep = 10
+	threshold = 0.007
+	minsep = 40
 	sgwin = 15
 	sgorder = 4
 	fudge = 0 
-	fit_length = 100
+	l = 200
+	k = 50
+	default_M = 40
+	filt = np.empty_like(data)
+
+	for i in np.arange(npix) :
+		#filt[i] = shaper_single(data[i], l, k, default_M, data[i][0])
+		filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
+	return filt
+
+def test_all() :
+
+	npix = 72**2
+	infile = '../data_TM1x1/demuxdouble.h5'
+	d = get_wfm_all(infile, 25890)
+	data = d.data
+	avg = d.avg
+	rms = d.rms
+	threshold = 0.007
+	minsep = 40
+	sgwin = 15
+	sgorder = 4
+	fudge = 0 
+	fit_length = 150
 	ax = 0 # not plotting fits
 	shaper_offset = c_ulong(5)
-	l = 1000
-	k = 100
+	l = 500
+	k = 50
 	default_M = 30
 
 	filt = np.empty_like(data)
@@ -203,24 +241,37 @@ def test_all(npix) :
 	max_npk = 20
 	# let's pull out the channels with an excessive number of peaks, then take
 	# a look at some of them.
+	bad_channels = np.array([])
+	none_channels = np.array([])
 
 	for i in np.arange(npix) :
+
 		peaks = get_peaks(data[i], avg[i], threshold, minsep, sgwin, sgorder)
-		M = fit_tau(data[i], avg[i], rms[i], peaks, fudge, fit_length, ax)
-		if len(peaks) > max_npk :
-			print 'ch', i, 'has', len(peaks), 'peaks' 
-		if len(peaks) > 1 : # multiple peaks on a channel
-			filt[i] = shaper_multi(data[i], peaks, l, k, M, shaper_offset)
+
+		if len(peaks) > max_npk : # too many peaks
+			#print 'ch', i, 'has', len(peaks), 'peaks' 
+			bad_channels = np.append(bad_channels, i)
+			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
+
+		elif (len(peaks) > 1 and len(peaks) <= max_npk) : # multiple peaks on a channel
+			M = fit_tau(data[i], avg[i], rms[i], peaks, fudge, fit_length, ax)
+			filt[i] = shaper_multi(data[i], peaks, l, k, M, shaper_offset, avg[i])
 
 		elif len(peaks) == 1 : # single peak on a channel
-			filt[i] = shaper_single(data[i], l, k, M)
+			M = fit_tau(data[i], avg[i], rms[i], peaks, fudge, fit_length, ax)
+			filt[i] = shaper_single(data[i], l, k, M, avg[i])
 
 		elif len(peaks) == 0 : # no peaks found
-			filt[i] = shaper_single(data[i], l, k, default_M)
+			#print 'ch', i, 'has 0 peaks'
+			none_channels = np.append(none_channels, i)
+			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
-	return (filt, data)
-def test_one(ch, threshold) :
+	return (filt, bad_channels, none_channels)
 
+
+def test_one(ch, threshold, Msingle, fit_length) :
+
+	close_figs()
 	infile = '../data_TM1x1/demuxdouble.h5'
 
 	# fudge(fit_tau), minsep(get peaks), and off(shaper peaks) 
@@ -234,13 +285,15 @@ def test_one(ch, threshold) :
 	
 	# minsep must be greater than fudge
 
-	l = 1000
-	k = 100
+	l = 200
+	k = 50
 	#threshold = 
 	fudge = 0
-	shaper_offset = c_ulong(5)
-	minsep = 10
-	fit_length = 100  # about 3x the expected tau
+	shaper_offset = c_long(30)
+	minsep = 50
+	sgwin = 15
+	sgorder = 4
+	#fit_length = 300  # about 3x the expected tau
 
 	# exp = np.ones(10000, dtype=np.float64)*0.828
 	# exp[1000:2000] += 0.01*np.exp(-(1.0/10)*np.arange(1000))	
@@ -249,32 +302,55 @@ def test_one(ch, threshold) :
  # 	noise = 0
  # 	exp = exp + noise
 
- 	d = get_wfm(file=infile, ch=ch, npt=25889, plt=False)
+ 	# get waveform and find peaks.
+ 	d = get_wfm_one(file=infile, ch=ch, npt=25889, plt=False)
  	data = d.data
- 	#threshold = 4*d.rms
-	peaks = get_peaks(data, d.avg, threshold, minsep, 15, 4)
+ 	baseline = d.avg
+ 	rms = d.rms
+	peaks = get_peaks(data, baseline, threshold, minsep, sgwin, sgorder)
+	npk = len(peaks)
 
-	#if peaks.size > 0 :
-	fig, ax = plt.subplots(1,1)
-	plot(data, ax)
-	ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
+	print 'channel #', ch, 'baseline = ', baseline, 'Vrms = ', rms
+	if npk > 0 :
 
-	M = fit_tau(data, d.avg, d.rms, peaks, fudge, fit_length, ax)
+		# plot peak locations
+		fig, ax = plt.subplots(1,1)
+		plot(data, ax)
+		ax.scatter(peaks, data[peaks], marker='x', color='r', s=40)
+		fig.show()
+		
+		# fit tau to peaks with least squares
+		tau = fit_tau(data, baseline, rms, peaks, fudge, fit_length, ax)
+		if npk > 1 :
+			filt = shaper_multi(data, peaks, l, k, tau[0], shaper_offset, baseline)
+		else :
+			filt = shaper_single(data, l, k, tau[0], baseline)
+		fig2, ax2 = plt.subplots(1,1)
+		plot(filt, ax2)
+		ax2.scatter(peaks, filt[peaks], marker='x', color='r', s=40)
+		fig2.show()
 
-	fig.show()
+		# print another plot with just a single M value used for the whole data set for comparison.
+		fig3, ax3 = plt.subplots(1,1)
+		filt3 = shaper_single(data, l, k, Msingle, baseline)
+		plot(filt3, ax3)
+		ax3.scatter(peaks, filt3[peaks], marker='x', color='r', s=40)
+		fig3.show()
 
-	filt = shaper_peaks(data, peaks, l, k, M, shaper_offset)
-	fig2, ax2 = plt.subplots(1,1)
-	plot(filt, ax2)
-	ax2.scatter(peaks, filt[peaks], marker='x', color='r', s=40)
-	fig2.show()
+		print 'Fitted time constants:'
+		for i in np.arange(npk) :
+			print '\n'
+			print 'Peak no.', i+1
+			print 'tau = ', tau[0][i] 
+			print 'chi-square = ', tau[1][i]
+			print 'Q = ', tau[2][i]
+			print 'P = ', tau[3][i]
+			
 
-	return (peaks, M)
+		return (peaks, tau[0])
 
-	# else :
-	# 	print 'No peaks found in this channel.'
-
-	#return (peaks, M)
+	else :
+		print 'no peaks found in Channel', ch
 
 def trigger(channel, sgwin, threshold):
 	"""
@@ -290,7 +366,7 @@ def trigger(channel, sgwin, threshold):
 	sgorder = 4
 
 	fig, axis = plt.subplots(1,1)
-	d = get_wfm(infile, channel, 25890, False)
+	d = get_wfm_one(infile, channel, 25890, False)
 	trig = get_peaks(d.data, d.avg, threshold, minsep, sgwin, sgorder)
 	filt = savgol_scipy(d.data, sgwin, sgorder)
 	fig, ax = plt.subplots(1,1)
