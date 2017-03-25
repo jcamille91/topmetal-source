@@ -27,18 +27,6 @@ typedef struct peaks_handle
 
 } peaks_t;
 
-// typedef struct pk_hdl 
-// {
-
-//     size_t nPk;
-//     size_t *loc;
-//     size_t *l;
-//     size_t *k;
-//     double *M;
-
-// } pk_t;
-
-
 void read_arr(size_t *input){
 
     size_t *y;
@@ -83,7 +71,7 @@ void read_struct(peaks_t *input){
 
 }
 
-void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, double baseline, size_t offset)
+void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, double baseline)
 {
     /* intended to be used by python numpy arrays, to quickly test different trapezoidal
      filtering parameters on data. */
@@ -100,11 +88,13 @@ void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, 
     // use this loop to display that filter parameters are being
     // received correctly
 
-    // for (z = 0; z<PEAKS->nPk; z++) {
-    // fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
-    // fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
-    // fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
-    // }
+    for (z = 0; z<PEAKS->nPk; z++) {
+    fprintf(stderr, "LEFT[%zu] = %zu\n", z, PEAKS->LEFT[z]);
+    fprintf(stderr, "RIGHT[%zu] = %zu\n", z, PEAKS->RIGHT[z]);
+    fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
+    fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
+    fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
+    }
 
 
 

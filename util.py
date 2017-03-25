@@ -9,6 +9,7 @@ from ctypes import *
 import numpy.ctypeslib as npct
 
 # plotting tools
+import time
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 from matplotlib import axes
@@ -182,7 +183,7 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 		pk = np.array(pk)[Y[pk] < alpha]
 
 	# remove peaks within the minimum separation... can do this smarter.
-	toss = np.array([0])
+	toss = np.array([])
 	for i in np.arange(len(pk)-1) :
 		# if the peaks are closer than the minimum separation and the second peak is
 		# larger than the first, throw out the first peak. 
@@ -190,8 +191,6 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 		#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
 			toss = np.append(toss, i+1)
 
-	# remove junk element we left to initialize array.
-	toss = np.delete(toss, 0)
 	pkm = np.delete(pk, toss)
 
 	# cons = 5 # consecutively increasing values preceeding a peak
@@ -219,7 +218,7 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 
 	return: array of fitted tau values. same length as number of input peaks.
 	"""
-	tau = np.zeros(len(peaks), dtype=c_double)
+	tau = np.zeros(len(peaks), dtype=np.float64)
 	chisq = np.zeros(len(peaks), dtype=np.float64)
 	Q = np.zeros(len(peaks), dtype=np.float64)
 	P = np.zeros(len(peaks), dtype=np.float64)
@@ -248,8 +247,13 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 		else :								  
 			yi = data[peaks[j]:peaks[j]+fit_length]
 		N=len(yi)
-		xi = np.arange(N)	
-		par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+		xi = np.arange(N)
+
+		if rms == 0 :
+			par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+				              check_finite=False, bounds=bounds, method='trf')
+		else :
+			par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
 				             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
 				             bounds=bounds, method='trf')
 
@@ -266,14 +270,14 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 		P[j] = pval
 		Q[j] = 1-pval
 
-		# if axis object is provided, add the fit as scatter plot to the axis.
+		# if axis object is provided, add the fit as a scatter plot to the axis.
 		if isinstance(ax, ax_obj) :
-			ax.scatter(xi+peaks[j],model_func(xi,*par), marker='o')
+			ax.scatter(xi+peaks[j], model_func(xi,*par), marker = 'o')
 
 
 
-	return tau
-	#return (tau, chisq, Q, P)
+	#return tau
+	return (tau, chisq, Q, P)
 
 def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
@@ -284,32 +288,19 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 	npk = len(peaks)
 
 	# for now just fix l,k.
-	l_arr = np.ones(npk, dtype=c_ulong)*l
-	k_arr = np.ones(npk, dtype=c_ulong)*k
+	l_arr = np.ones(npk, dtype = c_ulong)*l
+	k_arr = np.ones(npk, dtype = c_ulong)*k
 
-	# put peak locations into left/right for the filter.
-	# offset left/rights of peak with 'off'. use negative sign
-	# to offset before the peak, positive for after the peak.
-	LEFT = np.zeros(npk, dtype=c_ulong)
-	RIGHT = np.zeros(npk, dtype=c_ulong)
-
-	for i in np.arange(npk-1):
-		LEFT[i] = peaks[i]    # - offset
-		RIGHT[i] = peaks[i+1] # - offset
-		
-	
-	LEFT[0] = 0
-	LEFT[npk-1] = peaks[npk-1]
-	RIGHT[npk-1] = len(data)
+	LR = pk2LR(peaks, offset, len(data)-1)
 
 	# print 'l', l
 	# print 'k', k
 	# print 'M', M
 	# print 'number of peaks =', npk
-	# print 'LEFT = ', LEFT
-	# print 'RIGHT = ', RIGHT
+	# print 'LEFT = ', LR[0]
+	# print 'RIGHT = ', LR[1]
 
-	PEAK = peaks_handle(npk, LEFT, RIGHT, l_arr, k_arr, M)
+	PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
 	out = np.empty_like(data)
 	lib = CDLL("shaper.so")
 	lib.shaper_multi.restype = None
@@ -317,6 +308,42 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 	lib.shaper_multi(data, out, c_ulong(len(data)), byref(PEAK), c_double(baseline))
 
 	return np.array(out)
+
+def pk2LR(peaks, offset, end) :
+	
+	""" put peak locations into arrays of left and rights for trapezoidal shaper.
+	 apply desired offset. Both arrays are the same length as input 'peaks' array.
+	
+	inputs:
+	1. peaks: numpy array of peak locations.
+	2. offset: '-' shifts L/R back, '+' shifts L/R forward 
+	3. end: length of entire dataset. 25890 for out22.h5 after
+	demux.
+	output:
+	1. LEFT/RIGHT: beginning and end points for each set of 
+	trapezoidal filter parameters l,k, and M."""
+
+	# probably a better way to do this function, it 
+	# feels sort of clumsy.
+
+	npk = len(peaks)
+	LEFT = np.zeros(npk)
+	RIGHT = np.zeros(npk)
+
+	for i in np.arange(npk-1):
+		LEFT[i]  = peaks[i]   + offset
+		RIGHT[i] = peaks[i+1] + offset
+		
+	LEFT[0] = 0
+	LEFT[npk-1] = peaks[npk-1] + offset
+	RIGHT[npk-1] = end
+
+	# trapezoidal filter uses size_t, or c_ulong, as its datatype
+	# for left and right. they index locations possibly larger than int allows.
+	LEFT = np.array(LEFT, dtype = c_ulong)
+	RIGHT = np.array(RIGHT, dtype = c_ulong)
+
+	return (LEFT, RIGHT)
 
 def shaper_single(data, l, k, M, baseline):
 	# apply trapezoidal filter to a numpy array, return the numpy array 
@@ -392,26 +419,62 @@ def pixelate_single(data, sample):
 	fig, ax = plt.subplots()
 
 	# make bounds between -2mV and 10mV.
-	im = ax.imshow(data_2d, cmap=cm.afmhot, vmin=0.0, vmax=0.03)
+	im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
 	fig.colorbar(im)
 	ax.grid(True)
 	fig.show()
 
-def pixelate_multi(data, start, stop)
 
-	timestep = (4*72**2)*(3.2*10**-8)
+	plt.close()
+
+def pixelate_multi(data, start, stop, stepsize):
+
+	""" plot successive pixelated images of the 72*72 sensor.
+	input:
+	1 data: a (72**2 x number of samples) numpy array.
+	2/3 start and stop : specify desired points in time to plot.
+	4 stepsize: decides how many of the time points to plot. if '1',
+	all of the data is plotted. if '10' for example, each successive
+	10th point in time is plotted. stepsize must divide into integers. """
+
+
+
+
+	sample_time = (4*72**2)*(3.2*10**-8)
 	row = 72
-	stop - start = npt
+	
+	a = np.arange(start, stop, stepsize)
+	npt = len(a)
 
-	for i in np.arange(npt)+start
-		fig, ax = plt.subplots()
-		data_2d = np.reshape(data[:,i], (row, -1)) # convert to square matrix
-		plt.imshow(data_2d, cmap=cm.afmhot)
+	# get the data into 72 x 72 x npt array
+	data_2d = np.zeros((72,72, npt))
+	# print 'number of points to slice', npt
+	# print 'len of a = ', len(a)
+	# print 'time points to slice:', a
+	for i in xrange(npt) :
+		data_2d[:,:,i] = np.reshape(data[:,a[i]], (row,-1)) # convert to square matrix
 
-	im = ax.imshow(data_2d, cmap=cm.afmhot, vmin=0.0, vmax=0.03)
-	fig.colorbar(im)
-	ax.grid(True)
+
+	fig = plt.figure(1)
+	ax = fig.add_subplot(111)
+	ax.set_title("topmetal data")
+	
+	#im = ax.imshow(np.zeros((72,72)), cmap=cm.viridis, vmin=-0.001, vmax=0.015)
+	#im = ax.imshow(np.zeros((72,72)), cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.015)
+	im = ax.imshow(np.zeros((72,72)), cmap=cm.jet, vmin=0.0, vmax=0.007)
 	fig.show()
+	im.axes.figure.canvas.draw()
+
+	tstart = time.time()
+	for j in xrange(npt) :
+		
+		t = j*stepsize*sample_time
+		ax.set_title("Time elapsed: %f seconds" % t)
+		im.set_data(data_2d[:,:,j])
+		im.axes.figure.canvas.draw()
+
+	#return a
+	#print ( 'FPS:', 1.0*npt/(time.time() - tstart) )
 
 def signal_plot(infile, pixel):
 	event = 'C0'
@@ -424,7 +487,7 @@ def signal_plot(infile, pixel):
 	   d = hf.get(event)
 	   data = np.array(d)
 
-	#choose channel and pixel 
+	# choose channel and pixel 
 	chpix = (channel)*nPix + (pixel) # take ch 0-7, pixels 0-5183 (72**2 - 1)
 
 	samples = np.linspace(0, len(data[0])-1, len(data[0]))

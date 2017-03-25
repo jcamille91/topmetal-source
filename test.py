@@ -4,7 +4,7 @@ def sensor_noise(npt, threshold):
 	
 	noise = namedtuple('noise', 'data rms thresh')
 
-	# ch 0-2 are dead channels for demux
+	# ch 0-2 are dead channels for identifying frame start in demux algorithm.
 	dead = 3
 	infile = '../data_TM1x1/demuxdouble.h5'
 	a = pull_all(infile)
@@ -124,7 +124,7 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 	# specify M=tau, peak location, amplitude, and the number of points to define
 	# the peak.
 	M_i = np.array([30, 20, 40], dtype=np.float64)
-	M_loc = np.array([1000, 5000, 8000])
+	M_loc = np.array([1000, 1100, 8000])
 	M_a = np.array([0.02, 0.015, 0.011])
 	npk = len(M_i)
 	M_npt = res
@@ -135,6 +135,9 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 	sgorder = 4
 	sgwin = 15
 	minsep = 20
+
+	# offset for L/R of trapezoidal shaper
+	shaper_offset = 0
 
 	# make array big enough to accomodate peak location and size.
 	data_len = 10000
@@ -160,14 +163,13 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 
 
 	# trapezoidal filter transitions currently set to edges of pulses.
-	LEFT = (np.array([0,5000,8000], dtype = c_ulong))
-	RIGHT = (np.array([5000,8000,len(exp)], dtype = c_ulong))
+	LR = pk2LR(peaks, shaper_offset, len(exp))
 	l_arr = (l*np.ones(npk, dtype = c_ulong))
 	k_arr = (k*np.ones(npk, dtype = c_ulong))
 	M = M_i
 	#M = tau[0]
 
-	PEAK = peaks_handle(len(LEFT), LEFT, RIGHT, l_arr, k_arr, M)
+	PEAK = peaks_handle(len(LR[0]), LR[0], LR[1], l_arr, k_arr, M)
 	out = np.empty_like(exp)
 	lib = CDLL("shaper.so")
 	lib.shaper_multi.restype = None
@@ -206,14 +208,14 @@ def test_simple() :
 	sgwin = 15
 	sgorder = 4
 	fudge = 0 
-	l = 200
+	l = 500
 	k = 50
 	default_M = 40
 	filt = np.empty_like(data)
 
 	for i in np.arange(npix) :
-		#filt[i] = shaper_single(data[i], l, k, default_M, data[i][0])
-		filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
+		filt[i] = shaper_single(data[i], l, k, default_M, data[i][0])
+		#filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 	return filt
 
 def test_all() :
@@ -289,7 +291,7 @@ def test_one(ch, threshold, Msingle, fit_length) :
 	k = 50
 	#threshold = 
 	fudge = 0
-	shaper_offset = c_long(30)
+	shaper_offset = -30
 	minsep = 50
 	sgwin = 15
 	sgorder = 4
