@@ -2,32 +2,21 @@ from util import *
 
 def sensor_noise(npt, threshold):
 	
-	noise = namedtuple('noise', 'data rms thresh')
-
 	# ch 0-2 are dead channels for identifying frame start in demux algorithm.
+	nch = 72**2
 	dead = 3
 	infile = '../data_TM1x1/demuxdouble.h5'
-	a = pull_all(infile)
-	length = len(a[0])
+	a = get_wfm_all(infile, npt) # wfm = namedtuple('wfm', 'avg rms data')
 
-	if ((npt == False) or (npt > length)) :
-		print 'set calculation length to raw data array length =', length 
-		npt = length
-
-	rms = np.zeros(72**2-dead) # this array only goes from 0-5180, exlude first three pixels for calc.
-	for i in np.arange(72**2-dead)+dead :
-		rms[i-3] = np.std(a[i][:npt])
-
-	thresh_i = np.where(rms > threshold)[0] + dead
+	noisy_ch = np.where(a.rms > threshold)[0]
 	
-	print 'max rms', np.amax(rms)
-	print 'min rms', np.amin(rms)
-	print 'avg rms', np.mean(rms)
-	print 'channels above', threshold, 'volts RMS' 
-	print thresh_i
+	print 'max rms', np.amax(a.rms[dead:nch-1])
+	print 'min rms', np.amin(a.rms[dead:nch-1])
+	print 'avg rms', np.mean(a.rms[dead:nch-1])
+	print 'channels above', threshold, 'volts RMS:' 
+	print noisy_ch
 
-	return noise(data=a, rms=rms, thresh=thresh_i)
-
+	return (a, noisy_ch)
 
 
 def dmux_input():
@@ -124,7 +113,7 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 	# specify M=tau, peak location, amplitude, and the number of points to define
 	# the peak.
 	M_i = np.array([30, 20, 40], dtype=np.float64)
-	M_loc = np.array([1000, 1100, 8000])
+	M_loc = np.array([1000, 5000, 8000])
 	M_a = np.array([0.02, 0.015, 0.011])
 	npk = len(M_i)
 	M_npt = res
@@ -150,7 +139,7 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 
 	# build an array with exponential decays just defined above.
 	exp = np.ones(data_len, dtype=np.float64)*baseline
-	for i in np.arange(npk) :
+	for i in xrange(npk) :
 		exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
 	exp += noise
 
@@ -181,12 +170,12 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 	fig.show()
 	fig2.show()
 	print 'True time constants: \n'
-	for i in np.arange(npk) :
+	for i in xrange(npk) :
 		print 'Peak no.', i+1
 		print M_i[i]
 	print '\n'
 	print 'Fitted time constants: \n'
-	for i in np.arange(npk) :
+	for i in xrange(npk) :
 		print 'Peak no.', i+1
 		print 'tau = ', tau[0][i] 
 		print 'chi-square = ', tau[1][i]
@@ -213,13 +202,19 @@ def test_simple() :
 	default_M = 40
 	filt = np.empty_like(data)
 
-	for i in np.arange(npix) :
-		filt[i] = shaper_single(data[i], l, k, default_M, data[i][0])
-		#filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
+	for i in xrange(npix) :
+		#filt[i] = shaper_single(data[i], l, k, default_M, data[i][0])
+		filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 	return filt
 
 def test_all() :
 
+	### let's make a plot of no peaks, peaks, and a lot of peaks/
+
+	### should also do a test quantitatively comparing
+	### results of sensor noise and channel status.
+
+	dead = 3
 	npix = 72**2
 	infile = '../data_TM1x1/demuxdouble.h5'
 	d = get_wfm_all(infile, 25890)
@@ -233,42 +228,52 @@ def test_all() :
 	fudge = 0 
 	fit_length = 150
 	ax = 0 # not plotting fits
-	shaper_offset = c_ulong(5)
+	shaper_offset = 5
 	l = 500
 	k = 50
-	default_M = 30
+	default_M = 30.0
 
 	filt = np.empty_like(data)
 
 	max_npk = 20
-	# let's pull out the channels with an excessive number of peaks, then take
-	# a look at some of them.
-	bad_channels = np.array([])
-	none_channels = np.array([])
+	
+	busy_ch = np.array([], dtype=int) # channels with number of peaks exceeding max_npk
+	none_ch = np.array([], dtype=int) # channels with no found peaks
+	peak_ch = np.zeros(72**2, dtype=int)
+	for l in xrange(dead) : # filter first three dead channels. no signal to peakdet here.
 
-	for i in np.arange(npix) :
+		filt[l] = shaper_single(data[l], l, k, default_M, avg[l])
+
+	for i in xrange(dead,npix) :
 
 		peaks = get_peaks(data[i], avg[i], threshold, minsep, sgwin, sgorder)
-
-		if len(peaks) > max_npk : # too many peaks
+		npk = len(peaks)
+		chpk[i] = npk
+		if npk > max_npk : # too many peaks
 			#print 'ch', i, 'has', len(peaks), 'peaks' 
-			bad_channels = np.append(bad_channels, i)
+			busy_ch = np.append(busy_ch, i)
 			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
-		elif (len(peaks) > 1 and len(peaks) <= max_npk) : # multiple peaks on a channel
+		elif (npk > 1 and npk <= max_npk) : # multiple peaks on a channel
 			M = fit_tau(data[i], avg[i], rms[i], peaks, fudge, fit_length, ax)
 			filt[i] = shaper_multi(data[i], peaks, l, k, M, shaper_offset, avg[i])
 
-		elif len(peaks) == 1 : # single peak on a channel
+		elif npk == 1 : # single peak on a channel
 			M = fit_tau(data[i], avg[i], rms[i], peaks, fudge, fit_length, ax)
 			filt[i] = shaper_single(data[i], l, k, M, avg[i])
 
-		elif len(peaks) == 0 : # no peaks found
+		elif npk == 0 : # no peaks found
 			#print 'ch', i, 'has 0 peaks'
-			none_channels = np.append(none_channels, i)
+			none_ch = np.append(none_ch, i)
 			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
-	return (filt, bad_channels, none_channels)
+	ch_status = np.ones(72**2)*0.5
+	ch_status[busy_ch] = 1
+	ch_status[none_ch] = 0
+
+	pixel_status(ch_status)
+
+	return (filt)
 
 
 def test_one(ch, threshold, Msingle, fit_length) :
@@ -340,7 +345,7 @@ def test_one(ch, threshold, Msingle, fit_length) :
 		fig3.show()
 
 		print 'Fitted time constants:'
-		for i in np.arange(npk) :
+		for i in xrange(npk) :
 			print '\n'
 			print 'Peak no.', i+1
 			print 'tau = ', tau[0][i] 

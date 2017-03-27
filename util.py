@@ -1,5 +1,8 @@
 # some useful functions that are used frequently.
 
+# test for slow pieces of code
+import time
+
 # for importing data from HDF5 files into Numpy arrays
 import h5py 
 
@@ -9,13 +12,12 @@ from ctypes import *
 import numpy.ctypeslib as npct
 
 # plotting tools
-import time
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 from matplotlib import axes
 ax_obj = axes.Axes
 import matplotlib.cm as cm
-from matplotlib.colors import Normalize
+from matplotlib.colors import Normalize, LinearSegmentedColormap
 
 
 # math/matrices, statistics, and fitting
@@ -99,7 +101,7 @@ def get_wfm_all(file, npt) :
 
 	""" get data for 72*72 sensor and calculate each channel's average and root mean square voltage. 
 	npt defaults to max value (25890 for current dataset) for zero input or too large of input."""
-
+	dead = 3
 	nch = 72**2
 	avg = np.zeros(nch)
 	rms = np.zeros(nch)
@@ -110,9 +112,9 @@ def get_wfm_all(file, npt) :
 	if ((npt == False) or (npt > length)) :
 		print 'set calculation length to raw data array length =', length 
 		npt = length
-	for i in np.arange(nch) :
-		avg[i] = np.mean(data[i])
-		rms[i] = np.std(data[i])
+	for i in xrange(dead,nch) : # leave channels 0-2 with avg = 0, rms = 0.
+		avg[i] = np.mean(data[i]) # they have no signal info, only for identifying demux
+		rms[i] = np.std(data[i]) # frames in demux algorithm.
 
 	return wfm(avg=avg, rms=rms, data=data)
 
@@ -184,7 +186,7 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 
 	# remove peaks within the minimum separation... can do this smarter.
 	toss = np.array([])
-	for i in np.arange(len(pk)-1) :
+	for i in xrange(len(pk)-1) :
 		# if the peaks are closer than the minimum separation and the second peak is
 		# larger than the first, throw out the first peak. 
 		if ((pk[i+1]-pk[i]) < minsep) :
@@ -194,8 +196,8 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 	pkm = np.delete(pk, toss)
 
 	# cons = 5 # consecutively increasing values preceeding a peak
-	# for j in np.arange(len(pkm))
-	# 	for k in np.arange(cons)
+	# for j in xrange(len(pkm))
+	# 	for k in xrange(cons)
 
 	# use the 'trig' namedtuple for debugging / accessing each step of the peak detection.
 	#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
@@ -241,7 +243,7 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 	end = len(data)-1 
 	peaks = np.append(peaks, end) 
 
-	for j in np.arange(npk) :
+	for j in xrange(npk) :
 		if peaks[j+1]-peaks[j] < fit_length : 
 			yi = data[peaks[j]:peaks[j+1]-fudge]
 		else :								  
@@ -266,9 +268,9 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 		Xsq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
 		
 		tau[j] = 1.0/par[1]
-		chisq[j] = Xsq
-		P[j] = pval
-		Q[j] = 1-pval
+		# chisq[j] = Xsq
+		# P[j] = pval
+		# Q[j] = 1-pval
 
 		# if axis object is provided, add the fit as a scatter plot to the axis.
 		if isinstance(ax, ax_obj) :
@@ -276,8 +278,22 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 
 
 
-	#return tau
-	return (tau, chisq, Q, P)
+	return tau
+	#return (tau, chisq, Q, P)
+
+def shaper_single(data, l, k, M, baseline):
+	# apply trapezoidal filter to a numpy array, return the numpy array 
+	# for quick analysis / plotting.
+
+	# import the library
+	lib = CDLL("shaper.so")
+	lib.shaper_single.restype = None
+						  # 	     in 		out   	  length  	 l  		k 		  M 	baseline
+	lib.shaper_single.argtypes = [double_ptr, double_ptr, c_ulong, c_ulong, c_ulong, c_double, c_double]
+	# allocate an array to hold output.
+	filt = np.empty_like(data)
+	lib.shaper_single(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M), c_double(baseline))
+	return np.array(filt)
 
 def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
@@ -330,7 +346,7 @@ def pk2LR(peaks, offset, end) :
 	LEFT = np.zeros(npk)
 	RIGHT = np.zeros(npk)
 
-	for i in np.arange(npk-1):
+	for i in xrange(npk-1):
 		LEFT[i]  = peaks[i]   + offset
 		RIGHT[i] = peaks[i+1] + offset
 		
@@ -344,20 +360,6 @@ def pk2LR(peaks, offset, end) :
 	RIGHT = np.array(RIGHT, dtype = c_ulong)
 
 	return (LEFT, RIGHT)
-
-def shaper_single(data, l, k, M, baseline):
-	# apply trapezoidal filter to a numpy array, return the numpy array 
-	# for quick analysis / plotting.
-
-	# import the library
-	lib = CDLL("shaper.so")
-	lib.shaper_single.restype = None
-						  # 	     in 		out   	  length  	 l  		k 		  M 	baseline
-	lib.shaper_single.argtypes = [double_ptr, double_ptr, c_ulong, c_ulong, c_ulong, c_double, c_double]
-	# allocate an array to hold output.
-	filt = np.empty_like(data)
-	lib.shaper_single(data, filt, c_ulong(len(data)), c_ulong(l), c_ulong(k), c_double(M), c_double(baseline))
-	return np.array(filt)
 
 def savgol_scipy(array, npt, order):
 	
@@ -406,6 +408,47 @@ def plotter(data):
 	plt.step(np.arange(len(data)), data)
 	plt.show()
 
+def arr2square(data):
+
+	row = 72 # for a 72x72 pixel array
+	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
+	return data_2d
+
+def pixel_status(data):
+
+
+	""" provide 72X72 data array on channel status. 0 is a channel with no found peaks.
+	1 is a channel exceeding the max number of peaks. 0.5 is 'normal' channels.
+	
+	input:
+	1. data: array of length 5184 to be reshaped into 72x72 pixel picture.
+	output:
+	plots 72x72 pixel picture, with a three bin color map. can customize color map
+	if desired. """
+
+	row = 72
+	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
+	fig = plt.figure(1)
+	ax = fig.add_subplot(111)
+	ax.set_title("pixel_status")
+
+	# make a simple 3 value color map (Red, Green, Blue)
+
+	###			LEGEND			###
+	# 0 = BLACK, 0.5 = GREEN, 1.0 = RED
+	#    NONE  		 OK			 BUSY        
+
+	colors = [(0,0,0), (0,1,0), (1,0,0)]
+	nbins = 3
+	cmap_name = 'pix_test'
+	mycolormap = LinearSegmentedColormap.from_list(
+			   cmap_name, colors, N=nbins)
+
+	im = ax.imshow(data_2d, cmap=mycolormap, vmin=0.0, vmax=1.0)
+	fig.show()
+	im.axes.figure.canvas.draw()
+
+
 def pixelate_single(data, sample):
 	""" Take 5184 channel x 25890 data point array and plot desired points in
 	time as 5184 pixel array """
@@ -413,12 +456,11 @@ def pixelate_single(data, sample):
 	# bright = max(data)
 	timestep = (4*72**2)*(3.2*10**-8)
 	row = 72
-	#x1d = np.arange(row**2) # make array big enough to be square
 	data_2d = np.reshape(data[:,sample], (row, -1)) # convert to square matrix
 
 	fig, ax = plt.subplots()
 
-	# make bounds between -2mV and 10mV.
+	# make bounds between -1 mV and 5 mV.
 	im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
 	fig.colorbar(im)
 	ax.grid(True)
@@ -493,7 +535,7 @@ def signal_plot(infile, pixel):
 	samples = np.linspace(0, len(data[0])-1, len(data[0]))
 
 	if dump :
-		for i in np.arange(0,len(data[channel])):
+		for i in xrange(len(data[channel])):
 		   print i, data[channel][i]
 
 	plt.step(samples, data[chpix])
