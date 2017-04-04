@@ -1,5 +1,10 @@
 # some useful functions that are used frequently.
 
+### 2.7 vs 3
+
+# 2.7 xrange becomes range in 3
+# 2.7 raw_input() becomes input in 3()
+
 # test for slow pieces of code
 import time
 
@@ -11,7 +16,10 @@ import h5py
 from ctypes import * 
 import numpy.ctypeslib as npct
 
-# plotting tools
+# plotting tools. so far, sticking to matplotlib.
+import matplotlib
+matplotlib.use('TkAgg') # matplotlib backend for plotting interactively. 
+						# configure this before importing pylab/pyplot.
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 from matplotlib import axes
@@ -19,6 +27,8 @@ ax_obj = axes.Axes
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize, LinearSegmentedColormap
 
+# Intel's OpenCV functions for image processing.
+import cv2
 
 # math/matrices, statistics, and fitting
 import numpy as np
@@ -32,16 +42,22 @@ import warnings
 warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")  
 
 # named tuples are convenient for returning items from functions without needing
-# to specify indices/ordering.
+# to specify and remember indices/ordering.
 from collections import namedtuple
 wfm = namedtuple('wfm', 'avg rms data') #  waveform data + info.
 trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of peak detection algorithm.
+PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detection performance of all 72x72 sensor channels
+
+class Peak(object):
+
+	def __init__(self)
+		self.dude = 0 
 
 ### a note on the two types of python pointer functionalities used here ###
 # 1. use Ctypes 'POINTER' functionality for defining/building data structures
 # to use between C and Python.
 # 2. use Numpy.Ctypeslib's 'ndpointer' to easily pass and return
-# data arrays between C and python for quick analysis in python environment.
+# pointer-arrays between C and python for quick analysis in python environment.
 
 float_ptr = npct.ndpointer(c_float, ndim=1, flags='CONTIGUOUS')
 sizet_ptr = npct.ndpointer(c_ulong, ndim=1, flags='CONTIGUOUS')
@@ -64,8 +80,8 @@ class peaks_t(Structure):
 
 def	peaks_handle(nPk, left, right, l, k, M):
 
-	""" this function converts numpy arrays into the appropriate 
-		pointers for the peaks_t structure """
+	''' this function converts numpy arrays into the appropriate 
+		pointers for the peaks_t structure '''
 
 	nPk = c_ulong(nPk)
 	left_p = left.ctypes.data_as(c_ulong_p)
@@ -80,11 +96,11 @@ def model_func(x, A, l, off) :
 	return ( A * np.exp( -l * (x) ) ) + off
 
 
-def get_wfm_one(file, ch, npt, plt) :
+def get_wfm_one(infile, ch, npt, plt) :
 
-	""" get data for a channel and calculate its average and root mean square. 
-	npt defaults to max value (25890 for current dataset) for zero input or too large of input."""
-	data = pull_one(file, ch)
+	''' get data for a channel and calculate its average and root mean square. 
+	npt defaults to max value (25890 for current dataset) for zero input or too large of input.'''
+	data = pull_one(infile, ch)
 
 	avg = np.mean(data[:npt])
 	rms = np.std(data[:npt])
@@ -97,16 +113,16 @@ def get_wfm_one(file, ch, npt, plt) :
 
 	return wfm(avg=avg, rms=rms, data=data)
 
-def get_wfm_all(file, npt) :
+def get_wfm_all(infile, npt) :
 
-	""" get data for 72*72 sensor and calculate each channel's average and root mean square voltage. 
-	npt defaults to max value (25890 for current dataset) for zero input or too large of input."""
+	''' get data for 72*72 sensor and calculate each channel's average and root mean square voltage. 
+	npt defaults to max value (25890 for current dataset) for zero input or too large of input.'''
 	dead = 3
 	nch = 72**2
 	avg = np.zeros(nch)
 	rms = np.zeros(nch)
 
-	data = pull_all(file)
+	data = pull_all(infile)
 	length = len(data[0])
 
 	if ((npt == False) or (npt > length)) :
@@ -147,25 +163,41 @@ def savgol_gsl(data, order, der, window):
 
 def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 
-	"""'threshold' in volts above the average signal value
-	'minsep' minimum number of samples between peaks. 
-	peaks closer than minsep are discarded."""
+	''' 
+	input:
+	- data : numpy array with peaks to look for.
+	- mean: average value of 'data'.
+	- threshold : minimum acceptable value (volts) above the average signal level for a peak.
+	- minsep : minimum number of samples between peaks.  peaks closer than minsep are discarded.
+
+	*** sgwin and sgorder are filter parameters for smoothing the data with a savitsky-golay filter
+	before peak detection. derivative based peak detection on noisy signals requires smoothing. ***
+
+	- sgwin : window of savitsky-golay filter. smaller window picks up smaller features
+	and vice-versa. window is number of adjacent points for polynomial fitting.
+	- sgorder : order of savitsky-golay polynomial for fitting to data.
+	
+	return:
+	- pkm : return array of peak locations given as indices of the original input array 'data'.
+	- trig(optional) : namedtuple for testing each step of peak detection if desired.
+	'''
 
 	# sign = 1 does positive data with peaks, sign = -1 does negative data with valleys
 	sign = 1
 
+	# smooth data for peak detection. if using non-noisy/ideal/fake data, can skip this step.
 	filt = savgol_scipy(data, sgwin, sgorder)
 	Y = filt
-	kernel = [1, 0, -1]
-	
-	# get derivative
+
+	# calculate derivative
+	kernel = [1, 0, -1]	
 	dY = convolve(Y, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
 	
-	# normalize derivative to 1. three values: increasing 1, decreasing -1, constant 0.
+	# normalize derivative to one. three values/meanings: 1 is increasing, -1 is decreasing, 0 is constant.
 	S = np.sign(dY)
 	
 	# the second derivative of the normalized derivative.
-	# should only have values for peaks and valleys, where the value of the derivative changes.
+	# should only have non-zero values for peaks and valleys, where the value of the derivative changes.
 	ddS = convolve(S, kernel, 'valid')
 
 	# first, find all of the positive derivative values. going up the peak.
@@ -204,22 +236,26 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 	return pkm
 
 def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
-	"""
+	'''
+	apply non-linear least squares fitting to one or multiple peaks on a given channel. use 'ax' to optionally
+	superimpose fit as a scatterplot onto input data plot.
+
 	inputs:
-	1. data: array containing pulses to fit
-	2. avg: baseline of the signal
-	3. rms: std dev of the signal
-	4. peaks: array of peak locations
-	5. fudge:  used in the case that there are consecutive peaks closer than the specified
+	- data : array containing pulses to fit
+	- avg : baseline of the signal
+	- rms : std dev of the signal
+	- peaks : array of peak locations
+	- fudge :  used in the case that there are consecutive peaks closer than the specified
 		fit length. 'fudge' moves current fit 'fudge' many data points back from next peak,
 		to try and ensure the following peak doesn't disturb the current peak's fit. 
-	6. fit_length: number of points data points used for least squares fit.
+	- fit_length : number of points data points used for least squares fit.
 		no more than about 3x expected tau is typical.
-	7. ax: supply a an axis from fig, ax = matplotlib.pyplot.subplots(y,y) to 
+	- ax : supply a an axis from fig, ax = matplotlib.pyplot.subplots(y,y) to 
 		superimpose a scatterplot of the fitted data onto the original data.
 
-	return: array of fitted tau values. same length as number of input peaks.
-	"""
+	return: 
+	- tau : array of fitted tau values. same length as number of input peaks.
+	'''
 	tau = np.zeros(len(peaks), dtype=np.float64)
 	chisq = np.zeros(len(peaks), dtype=np.float64)
 	Q = np.zeros(len(peaks), dtype=np.float64)
@@ -297,9 +333,9 @@ def shaper_single(data, l, k, M, baseline):
 
 def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
-	""" apply trapezoidal filter to data. at each peak location provided, switch
+	''' apply trapezoidal filter to data. at each peak location provided, switch
 	to the desired filter parameters, l, k, M. also provide the average baseline of
-	the input data. l,k,M, should have as many elements as there are peaks. """
+	the input data. l,k,M, should have as many elements as there are peaks. '''
 
 	npk = len(peaks)
 
@@ -327,17 +363,18 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
 def pk2LR(peaks, offset, end) :
 	
-	""" put peak locations into arrays of left and rights for trapezoidal shaper.
+	''' put peak locations into arrays of left and rights for trapezoidal shaper.
 	 apply desired offset. Both arrays are the same length as input 'peaks' array.
 	
 	inputs:
-	1. peaks: numpy array of peak locations.
-	2. offset: '-' shifts L/R back, '+' shifts L/R forward 
-	3. end: length of entire dataset. 25890 for out22.h5 after
+	- peaks : numpy array of peak locations.
+	- offset : '-' shifts L/R back, '+' shifts L/R forward 
+	0- end : length of entire dataset. 25890 for out22.h5 after
 	demux.
-	output:
-	1. LEFT/RIGHT: beginning and end points for each set of 
-	trapezoidal filter parameters l,k, and M."""
+
+	return:
+	- LEFT and RIGHT : beginning and end points for each set of 
+	trapezoidal filter parameters l,k, and M.'''
 
 	# probably a better way to do this function, it 
 	# feels sort of clumsy.
@@ -361,9 +398,21 @@ def pk2LR(peaks, offset, end) :
 
 	return (LEFT, RIGHT)
 
-def savgol_scipy(array, npt, order):
-	
-	out = savgol_filter(array, npt, order)
+def savgol_scipy(data, npt, order):
+	''' applying savitsky-golay filter to smooth raw data. Currently,
+	this is used to aid derivative based peak-detection.
+
+	input:
+	- data : raw data as a 1D numpy array.
+	- sgwin : window of savitsky-golay filter. smaller window picks up smaller features
+	and vice-versa. window is number of adjacent points for polynomial fitting.
+	- sgorder : order of savitsky-golay polynomial for fitting to data.
+
+	return:
+	- out : 1D numpy array of smoothed data, same length as input.
+	'''
+
+	out = savgol_filter(data, npt, order)
 	return out
 
 def peakdet_cwt(data, axis):
@@ -378,8 +427,13 @@ def peakdet_cwt(data, axis):
 #def push(infile, pixel):
 
 def pull_one(infile, pixel):
-	#infile = '../data_TM1x1/out22_dmux'
-	# retrieve pixel signal data into 1D numpy array.
+	''' retrieve signal data for a single pixel into a 1D numpy array.
+	input:
+	- infile : string specifying desired .h5/.hdf5 file to read.
+	- pixel : desired pixel to retrieve. choose 0-5183. (72**2 total)
+	'''
+
+	#infile = '../data_TM1x1/out22_dmux' # file for current dataset.
 	event = 'C0' # for current dataset, only single event and sensor.
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
@@ -389,7 +443,11 @@ def pull_one(infile, pixel):
 
 def pull_all(infile):
 	
-	# retrieve signal data for all 5184 pixels into 2D numpy array.
+	''' retrieve signal data for all 5184 pixels into 2D numpy array.
+	input:
+	- infile : string specifying desired .h5/.hdf5 file to read.
+	'''
+
 	event = 'C0' # for current dataset, only single event and sensor.
 	channel = 0
 	with h5py.File(infile,'r') as hf: # open file for read
@@ -398,33 +456,129 @@ def pull_all(infile):
 
 	return data
 
-def close_figs():
+def close_figs(): 
+	'''
+	closes all active matplotlib.pyplot figures
+	'''
+
 	plt.close("all")
 
 def plot(data, axis):
-	axis.step(np.arange(len(data)), data)
+	''' 
+	1 dimensional 'step' plot.
+	inputs:
+	- data: 1D numpy array of data 
+	- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
+	 plot in ipython, supply 0 for axis to generate a standalone fig, axis plot.
 
-def plotter(data):
-	plt.step(np.arange(len(data)), data)
-	plt.show()
+	'''
+	if isinstance(axis, ax_obj) :	# if an axis is supplied, plot to it.
+		axis.step(np.arange(len(data)), data)
 
-def arr2square(data):
+	else :	# no axis, make a quick standalone plot.
+		plt.step(np.arange(len(data)), data)
+		plt.show()
+
+def plot_multich(data, ch):
+	
+	'''
+	This function plots a series of channels to 
+	observe a trend or difference. In ipython, press enter to 
+	progess to the next channel.
+
+	input: 
+	- data : (5184 x wfm length) 2D numpy array with waveform data for sensor.
+	- ch : 1D numpy array of channels to be plotted. 
+	'''
+
+	nch = len(ch)
+	wfmlen = len(data[0])
+	x = np.arange(wfmlen)
+
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+	ax.set_title("testing plot")
+
+	ax.step(x, np.zeros(wfmlen))
+	fig.show()
+	ax.figure.canvas.draw()
+
+	for i in xrange(nch) :
+		raw_input("press enter for next channel")
+		plt_ch = ch[i]
+		ax.cla()
+		ax.set_title("channel no. %i" % plt_ch)
+		ax.step(x, data[plt_ch])
+		ax.figure.canvas.draw()
+
+
+def hist_plot(data, nbins, end, axis) :
+	''' 
+	1 dimensional histogram plot.
+	inputs:
+	- data: 1D numpy array of data 
+	- nbins: number of desired bins.
+	- end: cutoff point for histogram x-axis
+	- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
+	 plot in ipython, supply 0 for axis to generate a standalone fig,axis plot.
+
+	'''
+	if isinstance(axis, ax_obj) : # axis supplied
+		axis.set_title("Sensor Noise Histogram")
+		axis.hist(data, nbins)
+		axis.set_xlabel('Volts RMS')
+		axis.set_ylabel('# of channels (5181 total)')
+		axis.set_title('Sensor Noise')
+		axis.set_xlim() # x limits, y limits
+		axis.set_ylim()
+		axis.grid(True)
+
+	else : 			# no axis supplied, make standalone plot.
+		fig = plt.figure(1)
+		axis = fig.add_subplot(111)
+		axis.set_title("Sensor Noise Histogram")
+		axis.hist(data, nbins)
+		axis.set_xlabel('Volts RMS')
+		axis.set_ylabel('# of channels (5181 total)')
+		axis.set_title('Sensor Noise')
+		axis.set_xlim() # x limits, y limits
+		axis.set_ylim()
+		axis.grid(True)
+		fig.show()
+
+
+def locate_pixel(x, y) :
+	''' Take x and y location of square pixel array and convert to location in linear 1D array
+	input:
+	- x, y : cartesian coordinates of pixel in square array.
+	'''
+	dim = 72
+	out=(y*72)+x
+	print out
+	return out
+
+def arr2square(data) :
+
+	''' reshape a 1D array into a set of rows and columns (2D array).
+	input:
+	- data : 1D array for reshaping. 'row' determines shape of square 2D array.
+	'''
 
 	row = 72 # for a 72x72 pixel array
 	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
 	return data_2d
 
-def pixel_status(data):
+def pixel_tri_value(data) :
 
 
-	""" provide 72X72 data array on channel status. 0 is a channel with no found peaks.
+	''' provide 72X72 data array on channel status. 0 is a channel with no found peaks.
 	1 is a channel exceeding the max number of peaks. 0.5 is 'normal' channels.
 	
 	input:
 	1. data: array of length 5184 to be reshaped into 72x72 pixel picture.
 	output:
 	plots 72x72 pixel picture, with a three bin color map. can customize color map
-	if desired. """
+	if desired. '''
 
 	row = 72
 	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
@@ -432,7 +586,7 @@ def pixel_status(data):
 	ax = fig.add_subplot(111)
 	ax.set_title("pixel_status")
 
-	# make a simple 3 value color map (Red, Green, Blue)
+	# make a simple custom 3 value color map (Red, Green, Blue)
 
 	###			LEGEND			###
 	# 0 = BLACK, 0.5 = GREEN, 1.0 = RED
@@ -448,10 +602,39 @@ def pixel_status(data):
 	fig.show()
 	im.axes.figure.canvas.draw()
 
+def pixel_status(data):
+
+
+	''' Plot number of peaks found on each of the 5184 channels onto a 2D
+	pixel array.
+
+	input:
+	- data: 1D numpy array of length 5184 to be reshaped into 72x72 pixel picture.
+	'''
+
+	row = 72
+	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
+	fig = plt.figure(1)
+	ax = fig.add_subplot(111)
+	ax.set_title("pixel_status")     
+
+	mn = 0
+	mx = np.amax(data)
+
+	im = ax.imshow(data_2d, cmap=cm.hot, vmin=mn, vmax=mx)
+	fig.show()
+	im.axes.figure.canvas.draw()
+
 
 def pixelate_single(data, sample):
-	""" Take 5184 channel x 25890 data point array and plot desired points in
-	time as 5184 pixel array """
+	''' Take 5184 channel x 25890 data point array and plot desired points in
+	time as 5184 pixel array.
+	input:
+	- data : 2D numpy array (5184 x 25890)
+	- sample : desired point in sample space to plot 0-25889
+	'''
+
+
 	# dark = min(data)
 	# bright = max(data)
 	timestep = (4*72**2)*(3.2*10**-8)
@@ -471,16 +654,14 @@ def pixelate_single(data, sample):
 
 def pixelate_multi(data, start, stop, stepsize):
 
-	""" plot successive pixelated images of the 72*72 sensor.
+	''' plot successive pixelated images of the 72*72 sensor.
 	input:
-	1 data: a (72**2 x number of samples) numpy array.
-	2/3 start and stop : specify desired points in time to plot.
-	4 stepsize: decides how many of the time points to plot. if '1',
+	- data : a (5184 x number of time samples) numpy array.
+	- start and stop : specify desired points in time to plot.
+	- stepsize : decides how many of the time points to plot. if '1',
 	all of the data is plotted. if '10' for example, each successive
-	10th point in time is plotted. stepsize must divide into integers. """
-
-
-
+	10th point in time is plotted. stepsize must divide into integers. 
+	'''
 
 	sample_time = (4*72**2)*(3.2*10**-8)
 	row = 72
@@ -488,11 +669,9 @@ def pixelate_multi(data, start, stop, stepsize):
 	a = np.arange(start, stop, stepsize)
 	npt = len(a)
 
-	# get the data into 72 x 72 x npt array
-	data_2d = np.zeros((72,72, npt))
-	# print 'number of points to slice', npt
-	# print 'len of a = ', len(a)
-	# print 'time points to slice:', a
+	# get the data into (72 x 72 x npt) array
+	data_2d = np.zeros((72, 72, npt))
+
 	for i in xrange(npt) :
 		data_2d[:,:,i] = np.reshape(data[:,a[i]], (row,-1)) # convert to square matrix
 
@@ -509,16 +688,20 @@ def pixelate_multi(data, start, stop, stepsize):
 
 	tstart = time.time()
 	for j in xrange(npt) :
-		
 		t = j*stepsize*sample_time
 		ax.set_title("Time elapsed: %f seconds" % t)
 		im.set_data(data_2d[:,:,j])
 		im.axes.figure.canvas.draw()
 
-	#return a
-	#print ( 'FPS:', 1.0*npt/(time.time() - tstart) )
+def text_dump(infile, pixel):
+	
 
-def signal_plot(infile, pixel):
+	''' outputs waveform values textually to the terminal command line
+	input:
+	- infile : string name for file to retrieve data from
+	- pixel : choose a pixel 0-5183 to dump waveform data
+	'''
+
 	event = 'C0'
 	channel = 0
 	nPix = 72**2
@@ -534,14 +717,9 @@ def signal_plot(infile, pixel):
 
 	samples = np.linspace(0, len(data[0])-1, len(data[0]))
 
-	if dump :
-		for i in xrange(len(data[channel])):
-		   print i, data[channel][i]
+	for i in xrange(len(data[channel])):
+	   print i, data[channel][i]
 
-	plt.step(samples, data[chpix])
-	axes = plt.gca()
-	plt.grid()
-	plt.show()
 
 def demuxD(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
    lib = CDLL("demux_dbl.so")

@@ -1,24 +1,60 @@
 from util import *
 
-def sensor_noise(npt, threshold):
+### let's examine some busy channels. not as worried about sparse channels.
+
+### keep track of peaks discarded
+
+### for filtering, if peaks are closer than fit length, than filter both peaks
+### with only the second peak's fitted M.
+
+
+def sensor_noise():
 	
 	# ch 0-2 are dead channels for identifying frame start in demux algorithm.
+	npt = 25890
 	nch = 72**2
 	dead = 3
 	infile = '../data_TM1x1/demuxdouble.h5'
-	a = get_wfm_all(infile, npt) # wfm = namedtuple('wfm', 'avg rms data')
+	low = 0.001
+	med = 0.0015
+	loud = 0.002
 
-	noisy_ch = np.where(a.rms > threshold)[0]
+	a = get_wfm_all(infile, npt) # wfm = namedtuple('wfm', 'avg rms data')
 	
+	quiet_ch = np.where(a.rms < med)[0]
+	mid_ch = np.where((a.rms <= loud) & (a.rms >= med))[0]
+	noisy_ch = np.where(a.rms > loud)[0]
+
+
 	print 'max rms', np.amax(a.rms[dead:nch-1])
 	print 'min rms', np.amin(a.rms[dead:nch-1])
 	print 'avg rms', np.mean(a.rms[dead:nch-1])
-	print 'channels above', threshold, 'volts RMS:' 
-	print noisy_ch
+	
+	fig = plt.figure(1)
+	ax = fig.add_subplot(111)
 
-	return (a, noisy_ch)
+	# plot a 1D histogram of different noise levels observed (Volts RMS)
+	hist_plot(a.rms, ax)
+	print 'noisy_ch are channels above', loud, 'volts RMS'
+	print 'mid_ch are channels between', med, 'and', loud, 'volts RMS' 
+	fig.show()
+	#print noisy_ch
 
+	return (a, quiet_ch, mid_ch, noisy_ch)
 
+def compare_noise_npks():
+	mvnoise = 0.002
+	sn = sensor_noise(25890, mvnoise) #2 mV RMS threshold for noise
+	noisy_ch = sn[1]
+
+	pk = check_peaks(0.007, 40, 15, 4)
+	busy_ch = pk.many
+
+	ch = np.intersect1d(busy_ch, noisy_ch)
+	print '# of noisy channels with alot of peaks:', len(ch)
+
+	return sn[0]
+	
 def dmux_input():
 	# let's input a known signal to see if the demux is working.
 
@@ -184,7 +220,7 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 		print '\n'
 	#return (exp , np.array(out))
 
-def test_simple() :
+def do_simple() :
 
 	npix = 72**2
 	infile = '../data_TM1x1/demuxdouble.h5'
@@ -207,9 +243,83 @@ def test_simple() :
 		filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 	return filt
 
-def test_all() :
+def check_peaks(threshold, minsep, sgwin, sgorder) :
 
-	### let's make a plot of no peaks, peaks, and a lot of peaks/
+	''' 
+	inputs: 
+	- threshold : minimum value to qualify a peak.
+	- minsep : peaks closer than minsep are rejected.
+	- sgwin : window of savitsky-golay filter. smaller window picks up smaller features
+	and vice-versa. window is number of adjacent points for polynomial fitting.
+	- sgorder : order of savitsky-golay polynomial for fitting to data.
+	
+	outputs:
+	- none : no peaks found
+	- few : less than 5 peaks
+	- avg : 5 < peaks < 15
+	- many : 15 < peaks
+	'''
+
+	dead = 3
+	npix = 72**2
+	infile = '../data_TM1x1/demuxdouble.h5'
+	d = get_wfm_all(infile, 25890)
+	data = d.data
+	avg = d.avg
+	rms = d.rms
+
+	# some typical parameters for peak detection
+	# threshold = 0.007
+	# minsep = 40
+	# sgwin = 15
+	# sgorder = 4
+
+	few_val = 5
+	mid_val = 15
+
+
+	none = np.array([], dtype = int)
+	few = np.array([], dtype = int)
+	mid = np.array([], dtype = int)
+	many = np.array([], dtype = int)
+	
+	pkch = np.zeros(72**2, dtype=int) # array storing number of found peaks in each channel.
+
+	for i in xrange(dead, npix) :
+
+		peaks = get_peaks(data[i], avg[i], threshold, minsep, sgwin, sgorder)
+		npk = len(peaks)
+		pkch[i] = npk
+		if npk == 0 :
+			none = np.append(none, i)
+		elif npk < few_val :
+			few = np.append(few, i)
+		elif npk < mid_val :
+			mid = np.append(mid, i)
+		else  :
+			many = np.append(many, i)
+
+	print '# of channels with 0 peaks:', len(none)
+	print '# of channels with <', few_val, 'peaks:', len(few)
+	print '# of channels with <', mid_val, 'peaks:', len(mid)
+	print '# of channels with >', mid_val, 'peaks:', len(many)
+
+
+
+	# ch_status = np.ones(72**2)*0.5
+	# ch_status[busy_ch] = 1
+	# ch_status[none_ch] = 0
+
+	# pixel_status(ch_status)
+	pixel_status(pkch)
+
+
+	return PEAKS(none=none, few=few, mid=mid, many=many, pkch=pkch)
+
+
+def do_all() :
+
+	### let's make a plot of zero peaks, some peaks, and a lot of peaks/
 
 	### should also do a test quantitatively comparing
 	### results of sensor noise and channel status.
@@ -221,7 +331,8 @@ def test_all() :
 	data = d.data
 	avg = d.avg
 	rms = d.rms
-	threshold = 0.007
+	noise_thresh = 0.002 # 2mV RMS
+	pk_thresh = 0.007   # 7mV amplitude
 	minsep = 40
 	sgwin = 15
 	sgorder = 4
@@ -239,19 +350,22 @@ def test_all() :
 	
 	busy_ch = np.array([], dtype=int) # channels with number of peaks exceeding max_npk
 	none_ch = np.array([], dtype=int) # channels with no found peaks
-	peak_ch = np.zeros(72**2, dtype=int)
-	for l in xrange(dead) : # filter first three dead channels. no signal to peakdet here.
+	peak_ch = np.zeros(72**2, dtype=int) # array storing number of found peaks in each channel.
+
+
+	for l in xrange(dead) : # filter first three dead channels. no peaks to find here.
 
 		filt[l] = shaper_single(data[l], l, k, default_M, avg[l])
 
 	for i in xrange(dead,npix) :
 
-		peaks = get_peaks(data[i], avg[i], threshold, minsep, sgwin, sgorder)
+		peaks = get_peaks(data[i], avg[i], pk_thresh, minsep, sgwin, sgorder)
 		npk = len(peaks)
-		chpk[i] = npk
+		peak_ch[i] = npk
+
 		if npk > max_npk : # too many peaks
 			#print 'ch', i, 'has', len(peaks), 'peaks' 
-			busy_ch = np.append(busy_ch, i)
+			# busy_ch = np.append(busy_ch, i)
 			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
 		elif (npk > 1 and npk <= max_npk) : # multiple peaks on a channel
@@ -264,19 +378,19 @@ def test_all() :
 
 		elif npk == 0 : # no peaks found
 			#print 'ch', i, 'has 0 peaks'
-			none_ch = np.append(none_ch, i)
+			# none_ch = np.append(none_ch, i)
 			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
-	ch_status = np.ones(72**2)*0.5
-	ch_status[busy_ch] = 1
-	ch_status[none_ch] = 0
+	# ch_status = np.ones(72**2)*0.5
+	# ch_status[busy_ch] = 1
+	# ch_status[none_ch] = 0
 
-	pixel_status(ch_status)
+	# pixel_status(ch_status)
+	# ps2(peak_ch)
+	return (filt, peak_ch)
 
-	return (filt)
 
-
-def test_one(ch, threshold, Msingle, fit_length) :
+def do_one(ch, threshold, Msingle, fit_length) :
 
 	close_figs()
 	infile = '../data_TM1x1/demuxdouble.h5'
@@ -384,7 +498,7 @@ def trigger(channel, sgwin, threshold):
 
 	return trig
 
-def oldtest(pixel, pk, fit_length, l, k):
+def old(pixel, pk, fit_length, l, k):
 
 	# for fitting and filtering, do a conditional:
 
@@ -462,7 +576,7 @@ def oldtest(pixel, pk, fit_length, l, k):
 
 	# now let's iterate through the peaks and filter them with their appropriate time constants
 
-def shaper_np_test(l, k, M):
+def shaper_test(l, k, M):
 
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
@@ -488,7 +602,7 @@ def shaper_np_test(l, k, M):
 	#fig2.show()
 	fig3.show()
 
-def savgol_test():
+def savgol_compare():
 	fig, axis = plt.subplots(1,1)
 	fig2, axis2 = plt.subplots(1,1)
 	fig3, axis3 = plt.subplots(1,1)
