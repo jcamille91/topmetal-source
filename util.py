@@ -2,9 +2,9 @@
 
 ### 2.7 vs 3
 
-# 2.7 xrange becomes range in 3
+# 2.7 range becomes range in 3
 # 2.7 raw_input() becomes input in 3()
-
+# print statement becomes a built-in function
 # test for slow pieces of code
 import time
 
@@ -50,7 +50,7 @@ PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detecti
 
 class Peak(object):
 
-	def __init__(self)
+	def __init__(self):
 		self.dude = 0 
 
 ### a note on the two types of python pointer functionalities used here ###
@@ -106,8 +106,8 @@ def get_wfm_one(infile, ch, npt, plt) :
 	rms = np.std(data[:npt])
 
 	if plt == True :
-		print 'average = ', avg, 'Volts'
-		print 'sigma = ', rms, 'Volts RMS'
+		print('average = ', avg, 'Volts')
+		print('sigma = ', rms, 'Volts RMS')
 		plotter(data)
 
 
@@ -126,9 +126,9 @@ def get_wfm_all(infile, npt) :
 	length = len(data[0])
 
 	if ((npt == False) or (npt > length)) :
-		print 'set calculation length to raw data array length =', length 
+		print('set calculation length to raw data array length =', length)
 		npt = length
-	for i in xrange(dead,nch) : # leave channels 0-2 with avg = 0, rms = 0.
+	for i in range(dead,nch) : # leave channels 0-2 with avg = 0, rms = 0.
 		avg[i] = np.mean(data[i]) # they have no signal info, only for identifying demux
 		rms[i] = np.std(data[i]) # frames in demux algorithm.
 
@@ -218,7 +218,7 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 
 	# remove peaks within the minimum separation... can do this smarter.
 	toss = np.array([])
-	for i in xrange(len(pk)-1) :
+	for i in range(len(pk)-1) :
 		# if the peaks are closer than the minimum separation and the second peak is
 		# larger than the first, throw out the first peak. 
 		if ((pk[i+1]-pk[i]) < minsep) :
@@ -228,8 +228,8 @@ def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 	pkm = np.delete(pk, toss)
 
 	# cons = 5 # consecutively increasing values preceeding a peak
-	# for j in xrange(len(pkm))
-	# 	for k in xrange(cons)
+	# for j in range(len(pkm))
+	# 	for k in range(cons)
 
 	# use the 'trig' namedtuple for debugging / accessing each step of the peak detection.
 	#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
@@ -279,7 +279,7 @@ def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 	end = len(data)-1 
 	peaks = np.append(peaks, end) 
 
-	for j in xrange(npk) :
+	for j in range(npk) :
 		if peaks[j+1]-peaks[j] < fit_length : 
 			yi = data[peaks[j]:peaks[j+1]-fudge]
 		else :								  
@@ -345,12 +345,12 @@ def shaper_multi(data, peaks, l, k, M, offset, baseline):
 
 	LR = pk2LR(peaks, offset, len(data)-1)
 
-	# print 'l', l
-	# print 'k', k
-	# print 'M', M
-	# print 'number of peaks =', npk
-	# print 'LEFT = ', LR[0]
-	# print 'RIGHT = ', LR[1]
+	# print('l', l)
+	# print('k', k)
+	# print('M', M)
+	# print('number of peaks =', npk)
+	# print('LEFT = ', LR[0])
+	# print('RIGHT = ', LR[1])
 
 	PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
 	out = np.empty_like(data)
@@ -383,7 +383,7 @@ def pk2LR(peaks, offset, end) :
 	LEFT = np.zeros(npk)
 	RIGHT = np.zeros(npk)
 
-	for i in xrange(npk-1):
+	for i in range(npk-1):
 		LEFT[i]  = peaks[i]   + offset
 		RIGHT[i] = peaks[i+1] + offset
 		
@@ -503,8 +503,8 @@ def plot_multich(data, ch):
 	fig.show()
 	ax.figure.canvas.draw()
 
-	for i in xrange(nch) :
-		raw_input("press enter for next channel")
+	for i in range(nch) :
+		input("press enter for next channel")
 		plt_ch = ch[i]
 		ax.cla()
 		ax.set_title("channel no. %i" % plt_ch)
@@ -546,7 +546,19 @@ def hist_plot(data, nbins, end, axis) :
 		axis.grid(True)
 		fig.show()
 
+def define_square(x, y, len):
 
+	''' define a square region of interest on the 2D pixel array.
+	input:
+	- x, y : cartesian coordinates of upper left corner of square of interest.
+	- len : length of side of the square
+	
+	return:
+	- array of channels inside of the square region of interest.
+	'''
+	row = 72 # sensor is a 72x72 square
+	
+	return roi
 def locate_pixel(x, y) :
 	''' Take x and y location of square pixel array and convert to location in linear 1D array
 	input:
@@ -554,7 +566,7 @@ def locate_pixel(x, y) :
 	'''
 	dim = 72
 	out=(y*72)+x
-	print out
+	print(out)
 	return out
 
 def arr2square(data) :
@@ -672,7 +684,7 @@ def pixelate_multi(data, start, stop, stepsize):
 	# get the data into (72 x 72 x npt) array
 	data_2d = np.zeros((72, 72, npt))
 
-	for i in xrange(npt) :
+	for i in range(npt) :
 		data_2d[:,:,i] = np.reshape(data[:,a[i]], (row,-1)) # convert to square matrix
 
 
@@ -687,7 +699,7 @@ def pixelate_multi(data, start, stop, stepsize):
 	im.axes.figure.canvas.draw()
 
 	tstart = time.time()
-	for j in xrange(npt) :
+	for j in range(npt) :
 		t = j*stepsize*sample_time
 		ax.set_title("Time elapsed: %f seconds" % t)
 		im.set_data(data_2d[:,:,j])
@@ -717,8 +729,8 @@ def text_dump(infile, pixel):
 
 	samples = np.linspace(0, len(data[0])-1, len(data[0]))
 
-	for i in xrange(len(data[channel])):
-	   print i, data[channel][i]
+	for i in range(len(data[channel])):
+	   print(i, data[channel][i])
 
 
 def demuxD(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):

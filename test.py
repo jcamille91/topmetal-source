@@ -26,19 +26,19 @@ def sensor_noise():
 	noisy_ch = np.where(a.rms > loud)[0]
 
 
-	print 'max rms', np.amax(a.rms[dead:nch-1])
-	print 'min rms', np.amin(a.rms[dead:nch-1])
-	print 'avg rms', np.mean(a.rms[dead:nch-1])
+	print('max rms', np.amax(a.rms[dead:nch-1]))
+	print('min rms', np.amin(a.rms[dead:nch-1]))
+	print('avg rms', np.mean(a.rms[dead:nch-1]))
 	
 	fig = plt.figure(1)
 	ax = fig.add_subplot(111)
 
 	# plot a 1D histogram of different noise levels observed (Volts RMS)
 	hist_plot(a.rms, ax)
-	print 'noisy_ch are channels above', loud, 'volts RMS'
-	print 'mid_ch are channels between', med, 'and', loud, 'volts RMS' 
+	print('noisy_ch are channels above', loud, 'volts RMS')
+	print('mid_ch are channels between', med, 'and', loud, 'volts RMS')
 	fig.show()
-	#print noisy_ch
+	#print(noisy_ch)
 
 	return (a, quiet_ch, mid_ch, noisy_ch)
 
@@ -51,7 +51,7 @@ def compare_noise_npks():
 	busy_ch = pk.many
 
 	ch = np.intersect1d(busy_ch, noisy_ch)
-	print '# of noisy channels with alot of peaks:', len(ch)
+	print('# of noisy channels with alot of peaks:', len(ch))
 
 	return sn[0]
 	
@@ -128,7 +128,7 @@ def send_struct():
 	k = (np.array([11,22,3333], dtype = c_ulong))
 	M = (np.array([5.09,-333.67,895.44456], dtype = c_double))
 
- 	peak = pk_hdl(nPk, LEFT, RIGHT, l, k, M)
+	peak = pk_hdl(nPk, LEFT, RIGHT, l, k, M)
 
 	lib = CDLL("shaper.so")
 	lib.read_struct.restype = None
@@ -175,7 +175,7 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 
 	# build an array with exponential decays just defined above.
 	exp = np.ones(data_len, dtype=np.float64)*baseline
-	for i in xrange(npk) :
+	for i in range(npk) :
 		exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
 	exp += noise
 
@@ -205,19 +205,19 @@ def send_peaks(l, k, res, fit_length, mV_noise):
 	plot(out, axis2)
 	fig.show()
 	fig2.show()
-	print 'True time constants: \n'
-	for i in xrange(npk) :
-		print 'Peak no.', i+1
-		print M_i[i]
-	print '\n'
-	print 'Fitted time constants: \n'
-	for i in xrange(npk) :
-		print 'Peak no.', i+1
-		print 'tau = ', tau[0][i] 
-		print 'chi-square = ', tau[1][i]
-		print 'Q = ', tau[2][i]
-		print 'P = ', tau[3][i]
-		print '\n'
+	print('True time constants: \n')
+	for i in range(npk) :
+		print('Peak no.', i+1)
+		print(M_i[i])
+	print('\n')
+	print('Fitted time constants: \n')
+	for i in range(npk) :
+		print('Peak no.', i+1)
+		print('tau = ', tau[0][i])
+		print('chi-square = ', tau[1][i])
+		print('Q = ', tau[2][i])
+		print('P = ', tau[3][i])
+		print('\n')
 	#return (exp , np.array(out))
 
 def do_simple() :
@@ -238,7 +238,7 @@ def do_simple() :
 	default_M = 40
 	filt = np.empty_like(data)
 
-	for i in xrange(npix) :
+	for i in range(npix) :
 		#filt[i] = shaper_single(data[i], l, k, default_M, data[i][0])
 		filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 	return filt
@@ -285,7 +285,7 @@ def check_peaks(threshold, minsep, sgwin, sgorder) :
 	
 	pkch = np.zeros(72**2, dtype=int) # array storing number of found peaks in each channel.
 
-	for i in xrange(dead, npix) :
+	for i in range(dead, npix) :
 
 		peaks = get_peaks(data[i], avg[i], threshold, minsep, sgwin, sgorder)
 		npk = len(peaks)
@@ -299,10 +299,10 @@ def check_peaks(threshold, minsep, sgwin, sgorder) :
 		else  :
 			many = np.append(many, i)
 
-	print '# of channels with 0 peaks:', len(none)
-	print '# of channels with <', few_val, 'peaks:', len(few)
-	print '# of channels with <', mid_val, 'peaks:', len(mid)
-	print '# of channels with >', mid_val, 'peaks:', len(many)
+	print('# of channels with 0 peaks:', len(none))
+	print('# of channels with <', few_val, 'peaks:', len(few))
+	print('# of channels with <', mid_val, 'peaks:', len(mid))
+	print('# of channels with >', mid_val, 'peaks:', len(many))
 
 
 
@@ -353,18 +353,18 @@ def do_all() :
 	peak_ch = np.zeros(72**2, dtype=int) # array storing number of found peaks in each channel.
 
 
-	for l in xrange(dead) : # filter first three dead channels. no peaks to find here.
+	for l in range(dead) : # filter first three dead channels. no peaks to find here.
 
 		filt[l] = shaper_single(data[l], l, k, default_M, avg[l])
 
-	for i in xrange(dead,npix) :
+	for i in range(dead,npix) :
 
 		peaks = get_peaks(data[i], avg[i], pk_thresh, minsep, sgwin, sgorder)
 		npk = len(peaks)
 		peak_ch[i] = npk
 
 		if npk > max_npk : # too many peaks
-			#print 'ch', i, 'has', len(peaks), 'peaks' 
+			#print('ch', i, 'has', len(peaks), 'peaks') 
 			# busy_ch = np.append(busy_ch, i)
 			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
@@ -377,7 +377,7 @@ def do_all() :
 			filt[i] = shaper_single(data[i], l, k, M, avg[i])
 
 		elif npk == 0 : # no peaks found
-			#print 'ch', i, 'has 0 peaks'
+			#print('ch', i, 'has 0 peaks')
 			# none_ch = np.append(none_ch, i)
 			filt[i] = shaper_single(data[i], l, k, default_M, avg[i])
 
@@ -424,14 +424,14 @@ def do_one(ch, threshold, Msingle, fit_length) :
  # 	exp = exp + noise
 
  	# get waveform and find peaks.
- 	d = get_wfm_one(file=infile, ch=ch, npt=25889, plt=False)
- 	data = d.data
- 	baseline = d.avg
- 	rms = d.rms
+	d = get_wfm_one(file=infile, ch=ch, npt=25889, plt=False)
+	data = d.data
+	baseline = d.avg
+	rms = d.rms
 	peaks = get_peaks(data, baseline, threshold, minsep, sgwin, sgorder)
 	npk = len(peaks)
 
-	print 'channel #', ch, 'baseline = ', baseline, 'Vrms = ', rms
+	print('channel #', ch, 'baseline = ', baseline, 'Vrms = ', rms)
 	if npk > 0 :
 
 		# plot peak locations
@@ -458,20 +458,20 @@ def do_one(ch, threshold, Msingle, fit_length) :
 		ax3.scatter(peaks, filt3[peaks], marker='x', color='r', s=40)
 		fig3.show()
 
-		print 'Fitted time constants:'
-		for i in xrange(npk) :
-			print '\n'
-			print 'Peak no.', i+1
-			print 'tau = ', tau[0][i] 
-			print 'chi-square = ', tau[1][i]
-			print 'Q = ', tau[2][i]
-			print 'P = ', tau[3][i]
+		print('Fitted time constants:')
+		for i in range(npk) :
+			print('\n')
+			print('Peak no.', i+1)
+			print('tau = ', tau[0][i]) 
+			print('chi-square = ', tau[1][i])
+			print('Q = ', tau[2][i])
+			print('P = ', tau[3][i])
 			
 
 		return (peaks, tau[0])
 
 	else :
-		print 'no peaks found in Channel', ch
+		print('no peaks found in Channel', ch)
 
 def trigger(channel, sgwin, threshold):
 	"""
@@ -545,9 +545,9 @@ def old(pixel, pk, fit_length, l, k):
 	M = 1.0/par[1]
 	timestep = (4*72**2)*(3.2*10**-8)
 
-	print 'tau:', M, 'samples', M*timestep, 'seconds'
-	print 'amplitude:', 1000*par[0], 'mV'
-	print 'offset:', 1000*par[2], 'mV'
+	print('tau:', M, 'samples', M*timestep, 'seconds')
+	print('amplitude:', 1000*par[0], 'mV')
+	print('offset:', 1000*par[2], 'mV')
 
 	plot(pulse, fit_ax)
 
@@ -556,8 +556,8 @@ def old(pixel, pk, fit_length, l, k):
 	exp = model_func(x, *par)
 	chisq, P = chisquare(f_obs=pulse, f_exp=exp, ddof=len(pulse)-len(par))
 
-	print 'probability of data occuring for given parameters:', 1.0-P
-	print 'Chi Square sum:', chisq
+	print('probability of data occuring for given parameters:', 1.0-P)
+	print('Chi Square sum:', chisq)
 
 	fig3, trap_ax = plt.subplots(1,1)
 
