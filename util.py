@@ -1,10 +1,5 @@
-# some useful functions that are used frequently.
+# some useful functions
 
-### 2.7 vs 3
-
-# 2.7 range becomes range in 3
-# 2.7 raw_input() becomes input in 3()
-# print statement becomes a built-in function
 # test for slow pieces of code
 import time
 
@@ -13,7 +8,16 @@ import h5py
 
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
 # These functions can be slow when implemented in Python.
-from ctypes import * 
+
+# Ctypes datatypes
+from ctypes import c_ulong, c_int, c_double, c_float
+# C equivalents =  size_t,  int,   double,   float
+
+# CDLL used to load desired shared library. 
+# POINTER creates C pointer object. byref() for passing pointers.
+# ctypes Structure object allows creation of true C 'struct'.
+from ctypes import CDLL, POINTER, byref, Structure
+
 import numpy.ctypeslib as npct
 
 # plotting tools. so far, sticking to matplotlib.
@@ -48,10 +52,51 @@ wfm = namedtuple('wfm', 'avg rms data') #  waveform data + info.
 trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of peak detection algorithm.
 PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detection performance of all 72x72 sensor channels
 
+class Sensor(object):
+	''' This class defines some basic features of sensor. Then defines
+	list of channel objects, which each contain a list of Peak object
+	'''
+	def __init__(self, infile):
+		self.row = 72
+		self.nch = 5184
+		self.infile = infile
+
+		# make a list of Pixel objects to represent individual channels.
+		self.ch = [Pixel(i) for i in range(self.nch)]
+	def get_wfm(self, npt):
+		print('this many points for calculation:', npt)
+
+	def prepare_ch(self):
+		 #self.ch = [] # create empty list of channels
+		 self.ch = [Pixel(i) for i in range(self.nch)]
+
+class Pixel(object):
+	
+	def __init__(self, number):
+		self.number = number
+		self.rms = 'rms'
+		self.avg = 'avg'
+		self.type = 'okay'
+	def xycoord(self, number):
+		''' for cartesian coordinates of pixels, consider
+		top-left corner as the origin.
+		Right is x increasing and Down is y increasing.
+		(x,y) are then stored into a 'loc' tuple.
+		'''
+
+		self.loc = (number % self.row, int(number / self.row))
+
 class Peak(object):
 
 	def __init__(self):
 		self.dude = 0 
+
+class Event(object):
+
+	def __init__(self):
+		self.radius = 20
+
+
 
 ### a note on the two types of python pointer functionalities used here ###
 # 1. use Ctypes 'POINTER' functionality for defining/building data structures
@@ -529,8 +574,8 @@ def hist_plot(data, nbins, end, axis) :
 		axis.set_xlabel('Volts RMS')
 		axis.set_ylabel('# of channels (5181 total)')
 		axis.set_title('Sensor Noise')
-		axis.set_xlim() # x limits, y limits
-		axis.set_ylim()
+		axis.set_xlim(0,end) # x limits, y limits
+		#axis.set_ylim()
 		axis.grid(True)
 
 	else : 			# no axis supplied, make standalone plot.
@@ -541,8 +586,8 @@ def hist_plot(data, nbins, end, axis) :
 		axis.set_xlabel('Volts RMS')
 		axis.set_ylabel('# of channels (5181 total)')
 		axis.set_title('Sensor Noise')
-		axis.set_xlim() # x limits, y limits
-		axis.set_ylim()
+		axis.set_xlim(0, end) # x limits, y limits
+		#axis.set_ylim()
 		axis.grid(True)
 		fig.show()
 

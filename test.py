@@ -7,17 +7,24 @@ from util import *
 ### for filtering, if peaks are closer than fit length, than filter both peaks
 ### with only the second peak's fitted M.
 
+### channels for current run with instable baseline. baseline shift significant 
+# compare to the desired signal. possible charge trapping inside of CSA.
+BAD  = np.array([268,269,340,718,719,805,806,1047,1048,1617,1618,2037,20
+    ...: 38, 2188,2189,2260,2396,2397, 2539, 2540, 2768, 2769, 4868])
+EXTRA = np.array([1898, 1899, 1970])
 
-def sensor_noise():
+
+def sensor_noise(npt):
 	
 	# ch 0-2 are dead channels for identifying frame start in demux algorithm.
-	npt = 25890
+	# npt = 25890
 	nch = 72**2
 	dead = 3
 	infile = '../data_TM1x1/demuxdouble.h5'
-	low = 0.001
-	med = 0.0015
-	loud = 0.002
+
+	# bounds for separating channels into three categories by noise.
+	x1 = 0.0012
+	x2 = 0.002
 
 	a = get_wfm_all(infile, npt) # wfm = namedtuple('wfm', 'avg rms data')
 	
@@ -34,17 +41,20 @@ def sensor_noise():
 	ax = fig.add_subplot(111)
 
 	# plot a 1D histogram of different noise levels observed (Volts RMS)
-	hist_plot(a.rms, ax)
-	print('noisy_ch are channels above', loud, 'volts RMS')
-	print('mid_ch are channels between', med, 'and', loud, 'volts RMS')
+	nbin= 2000
+	end_pt = 0.002 # Volts RMS
+	#np.histogram(a.rms, nbin)
+	hist_plot(a.rms, nbin, end_pt, ax)
+	print('noisy_ch are channels above', x2, 'volts RMS')
+	print('mid_ch are channels between', x1, 'and', x2, 'volts RMS')
 	fig.show()
 	#print(noisy_ch)
 
-	return (a, quiet_ch, mid_ch, noisy_ch)
+	return (a, noisy_ch, mid_ch, quiet_ch)
 
 def compare_noise_npks():
 	mvnoise = 0.002
-	sn = sensor_noise(25890, mvnoise) #2 mV RMS threshold for noise
+	sn = sensor_noise(25890) #2 mV RMS threshold for noise
 	noisy_ch = sn[1]
 
 	pk = check_peaks(0.007, 40, 15, 4)
