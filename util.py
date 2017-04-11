@@ -53,43 +53,114 @@ trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of pea
 PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detection performance of all 72x72 sensor channels
 
 class Sensor(object):
-	''' This class defines some basic features of sensor. Then defines
-	list of channel objects, which each contain a list of Peak object
-	'''
-	def __init__(self, infile):
-		self.row = 72
-		self.nch = 5184
-		self.infile = infile
-
-		# make a list of Pixel objects to represent individual channels.
-		self.ch = [Pixel(i) for i in range(self.nch)]
-	def get_wfm(self, npt):
-		print('this many points for calculation:', npt)
-
-	def prepare_ch(self):
-		 #self.ch = [] # create empty list of channels
-		 self.ch = [Pixel(i) for i in range(self.nch)]
-
-class Pixel(object):
 	
-	def __init__(self, number):
-		self.number = number
-		self.rms = 'rms'
-		self.avg = 'avg'
-		self.type = 'okay'
-	def xycoord(self, number):
-		''' for cartesian coordinates of pixels, consider
-		top-left corner as the origin.
-		Right is x increasing and Down is y increasing.
-		(x,y) are then stored into a 'loc' tuple.
+	''' This class defines some basic features of sensor. Then defines
+	list of 'Pixel' objects, which each contain a list of 'Peak' objects.
+	'''
+
+	def __init__(self, infile):
+		''' 
+		input:
+		-infile : string input, hdf5 file (.h5/.hdf5) where raw data is stored.
+		*** currently this is the already demuxed file. we can add demux functionality to this python code. ***
+
+		Sensor attributes:
+		-row : dimension of the square array
+		-nch : total number of pixels
+		-dead : channels used for frame identification in demux. contain no signal data.
+		-pix : list of 'Pixel' objects containg pixel raw data
+		 and attributes of each pixel.
+		-daq_event : name of hdf5 event to be analyzed from 'infile' (currently 25890 datapoints per pixel)
+		-daq_length : number of datapoints per pixel in a dataset (daq_event)
+		-sensor_channel : in case of a sensor with multiple 72x72 arrays, use this to select one.
+		*** currently setup for analysis of just one 72x72 sensor. ***
+		-tsample : sampling period for a single pixel. 
 		'''
 
-		self.loc = (number % self.row, int(number / self.row))
+		self.infile = infile
+		self.row = 72
+		self.nch = 5184
+		self.dead = 3
+		self.pix = []
+		self.daq_event = 'C0' 
+		self.daq_length = None
+		self.sensor_channel = 0
+		self.tsample = (4*72**2)*(3.2*10**-8)
+		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels")
+
+	def load_pixels(self, npt):
+		
+		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
+		and calculate each pixel's average and root mean square voltage. 
+		npt defaults to length of daq event (25890 for current dataset) 
+		for zero input or a value exceeding dataset length.
+
+		Sensor attributes;
+		-daq_length : number of points per pixel in dataset.
+
+		'''
+		with h5py.File(self.infile,'r') as hf: # open file for read
+			d = hf.get(self.daq_event)
+			data = np.array(d, dtype=np.float64)
+
+		self.daq_length = len(data[0])
+
+		if ((npt == False) or (npt > length)) :
+			print('invalid "npt" input. set calculation length to raw data array length =', length)
+			
+			# list of 'Pixel' objects
+			self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
+		else :
+			self.pix = = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
+
+		### do we want to set average and rms values to 0 for the dead channels or not?
+		### depends on how we will do sensor noise calculation later.
+		# for j in range(self.dead) :
+		# 	self.pix[j].av
+
+		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
+		print(npt, "points used in calcualtion for each channel's baseline and rms in Volts.")
+
+
+class Pixel(object):
+	'''
+	class for raw data and attributes of a pixel.
+	class attributes: (for all instances)
+	-row : dimension of pixel array. 
+	'''
+	row = 72 # class variable that applies to all instances
+	def __init__(self, number, data, avg, rms):
+		'''
+		Pixel attributes :
+		-number :
+		-data :
+		-avg :
+		-rms :
+		-loc : (x,y)=(col,row) coordinate as a tuple. top-left corner is origin.
+		rightwards increasing x, downards increasing y.
+		-type :
+		'''
+
+		self.number = number
+		self.data = data
+		self.avg = avg
+		self.rms = rms
+		self.loc = (number % row, int(number / row))
+		self.type = None
+
+	def find_peaks(self):
+
+		
+
+	def pixel_type(self):
+
 
 class Peak(object):
 
 	def __init__(self):
-		self.dude = 0 
+		self.tau = 0 
+		self.chisq = 0
+		
 
 class Event(object):
 
