@@ -52,123 +52,6 @@ wfm = namedtuple('wfm', 'avg rms data') #  waveform data + info.
 trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of peak detection algorithm.
 PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detection performance of all 72x72 sensor channels
 
-class Sensor(object):
-	
-	''' This class defines some basic features of sensor. Then defines
-	list of 'Pixel' objects, which each contain a list of 'Peak' objects.
-	'''
-
-	def __init__(self, infile):
-		''' 
-		input:
-		-infile : string input, hdf5 file (.h5/.hdf5) where raw data is stored.
-		*** currently this is the already demuxed file. we can add demux functionality to this python code. ***
-
-		Sensor attributes:
-		-row : dimension of the square array
-		-nch : total number of pixels
-		-dead : channels used for frame identification in demux. contain no signal data.
-		-pix : list of 'Pixel' objects containg pixel raw data
-		 and attributes of each pixel.
-		-daq_event : name of hdf5 event to be analyzed from 'infile' (currently 25890 datapoints per pixel)
-		-daq_length : number of datapoints per pixel in a dataset (daq_event)
-		-sensor_channel : in case of a sensor with multiple 72x72 arrays, use this to select one.
-		*** currently setup for analysis of just one 72x72 sensor. ***
-		-tsample : sampling period for a single pixel. 
-		'''
-
-		self.infile = infile
-		self.row = 72
-		self.nch = 5184
-		self.dead = 3
-		self.pix = []
-		self.daq_event = 'C0' 
-		self.daq_length = None
-		self.sensor_channel = 0
-		self.tsample = (4*72**2)*(3.2*10**-8)
-		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels")
-
-	def load_pixels(self, npt):
-		
-		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
-		and calculate each pixel's average and root mean square voltage. 
-		npt defaults to length of daq event (25890 for current dataset) 
-		for zero input or a value exceeding dataset length.
-
-		Sensor attributes;
-		-daq_length : number of points per pixel in dataset.
-
-		'''
-		with h5py.File(self.infile,'r') as hf: # open file for read
-			d = hf.get(self.daq_event)
-			data = np.array(d, dtype=np.float64)
-
-		self.daq_length = len(data[0])
-
-		if ((npt == False) or (npt > length)) :
-			print('invalid "npt" input. set calculation length to raw data array length =', length)
-			
-			# list of 'Pixel' objects
-			self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
-		else :
-			self.pix = = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
-
-		### do we want to set average and rms values to 0 for the dead channels or not?
-		### depends on how we will do sensor noise calculation later.
-		# for j in range(self.dead) :
-		# 	self.pix[j].av
-
-		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
-		print(npt, "points used in calcualtion for each channel's baseline and rms in Volts.")
-
-
-class Pixel(object):
-	'''
-	class for raw data and attributes of a pixel.
-	class attributes: (for all instances)
-	-row : dimension of pixel array. 
-	'''
-	row = 72 # class variable that applies to all instances
-	def __init__(self, number, data, avg, rms):
-		'''
-		Pixel attributes :
-		-number :
-		-data :
-		-avg :
-		-rms :
-		-loc : (x,y)=(col,row) coordinate as a tuple. top-left corner is origin.
-		rightwards increasing x, downards increasing y.
-		-type :
-		'''
-
-		self.number = number
-		self.data = data
-		self.avg = avg
-		self.rms = rms
-		self.loc = (number % row, int(number / row))
-		self.type = None
-
-	def find_peaks(self):
-
-		
-
-	def pixel_type(self):
-
-
-class Peak(object):
-
-	def __init__(self):
-		self.tau = 0 
-		self.chisq = 0
-		
-
-class Event(object):
-
-	def __init__(self):
-		self.radius = 20
-
-
-
 ### a note on the two types of python pointer functionalities used here ###
 # 1. use Ctypes 'POINTER' functionality for defining/building data structures
 # to use between C and Python.
@@ -210,6 +93,290 @@ def	peaks_handle(nPk, left, right, l, k, M):
 	# simple three parameter decaying exponential model for fitting.
 def model_func(x, A, l, off) :
 	return ( A * np.exp( -l * (x) ) ) + off
+
+
+class Sensor(object):
+	
+	''' This class defines some basic features of sensor. Creates a
+	list of 'Pixel' objects, which each contain a list of 'Peak' objects.
+	'''
+
+	def __init__(self, infile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble.h5'):
+		''' 
+		input:
+		-select : choose to analyze all the channels, or only some. 
+		the string 'all' or a list of desired channels are acceptable input.
+		-infile : string input, hdf5 file (.h5/.hdf5) where raw data is stored.
+		*** currently this is the already demuxed file. we can add demux functionality to this python code. ***
+		
+		can find data in this folder:
+		/Users/josephcamilleri/notebook/topmetal/data_TM1x1
+
+		Sensor attributes:
+		-row : dimension of the square array
+		-nch : total number of pixels
+		-dead : channels used for frame identification in demux. contain no signal data.
+		-pix : list of 'Pixel' objects containg pixel raw data
+		 and attributes of each pixel.
+		-daq_event : name of hdf5 event to be analyzed from 'infile' (currently 25890 datapoints per pixel)
+		-daq_length : number of datapoints per pixel in a dataset (daq_event)
+		-sensor_channel : in case of a sensor with multiple 72x72 arrays, use this to select one.
+		*** currently setup for analysis of just one 72x72 sensor. ***
+		-tsample : sampling period for a single pixel. 
+		'''
+		self.select = None 
+		self.infile = infile
+		self.row = 72
+		self.nch = 72**2
+		self.dead = 3
+		self.pix = []
+		self.daq_event = 'C0' 
+		self.daq_length = None
+		self.sensor_channel = 0
+		self.tsample = (4*72**2)*(3.2*10**-8)
+		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels")
+
+	def load_pixels(self, npt):
+		
+		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
+		and calculate each pixel's average and root mean square voltage. 
+		npt defaults to length of daq event (25890 for current dataset) 
+		for zero input or a value exceeding dataset length.
+		'''
+
+		with h5py.File(self.infile,'r') as hf: # open file for read, then close
+			d = hf.get(self.daq_event)
+			data = np.array(d, dtype=np.float64)
+
+		self.daq_length = len(data[0])
+
+		if ((npt == False) or (npt > self.daq_length)) :
+			print('invalid "npt" input. set calculation length to raw data array length =', length)
+			
+			# list of 'Pixel' objects
+			self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
+		else :
+			self.pix = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
+
+		### do we want to set average and rms values to 0 for the dead channels or not?
+		### depends on how we will do sensor noise calculation later.
+		# for j in range(self.dead) :
+		# 	self.pix[j].av
+
+		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
+		print(npt, "points used in calcualtion for each channel's baseline and rms in Volts.")
+
+	def analyze(self, select):
+		''' find peaks, fit peaks, then apply trapezoidal shaper
+		to data set. 
+		input :
+		-select : if 0, analyze all channels. otherwise, provide list of channels to analyze.
+		'''
+
+		self.guy = 'j'
+
+class Pixel(object):
+	'''
+	class for raw data and attributes of a pixel.
+	class attributes: (for all instances)
+	-row : dimension of pixel array. 
+	'''
+	row = 72
+	noisethresh = 0.002
+	fit_length = 300
+	fudge = 10
+	minsep = 50
+	def __init__(self, number, data, avg, rms):
+		'''
+		Pixel attributes :
+		-number : linear pixel number from 0-5183
+		-loc : (x,y)=(col,row) coordinate as a tuple. top-left corner is origin.
+		 rightwards increasing x, downards increasing y.
+		-data : numpy array of dataset
+		-avg : average voltage
+		-rms : rms voltage
+		-peaks : a list of 'Peak' objects
+		-npk : total number of peaks
+		-type : descriptor for pixel. some pixels are okay, others are noisy,
+		3 are for demux and some are clearly not functioning correctly
+		'''
+
+		self.number = number
+		self.loc = (number % Pixel.row, int(number/Pixel.row))
+		self.data = data
+		self.filt = np.empty_like(data)
+		self.avg = avg
+		self.rms = rms
+		self.peaks = []
+		self.npk = 0
+		if (self.rms > Pixel.noisethresh) :
+			self.type = 'noisy'
+		else :
+			self.type = None
+
+	def peak_det(self, threshold, minsep, sgwin = 15, sgorder = 4, sign = 1):
+		''' 
+		input:
+		- data : numpy array with peaks to look for.
+		- mean: average value of 'data'.
+		- threshold : minimum acceptable value (volts) above the average signal level for a peak.
+		- minsep : minimum number of samples between peaks.  peaks closer than minsep are discarded.
+		- sign : +1 for positive data with peaks, -1 for negative data with valleys.
+
+		*** sgwin and sgorder are filter parameters for smoothing the data with a savitsky-golay filter
+		before peak detection. derivative based peak detection on noisy signals requires smoothing. ***
+
+		- sgwin : window of savitsky-golay filter. smaller window picks up smaller features
+		and vice-versa. window is number of adjacent points for polynomial fitting.
+		- sgorder : order of savitsky-golay polynomial for fitting to data.
+		
+		return:
+		- pkm : return array of peak locations given as indices of the original input array 'data'.
+		- trig(optional) : namedtuple for testing each step of peak detection if desired.
+		'''	
+
+		f = savgol_scipy(self.data, sgwin, sgorder) # smooth data
+		kernel = [1, 0, -1]	# calculate each derivative
+		df = convolve(f, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
+		S = np.sign(df) # normalize derivative to 1. 1 increasing, -1 decreasing, 0 const.
+		
+		# the second derivative of the normalized derivative.
+		# should only have non-zero values for peaks and valleys, where the value of the derivative changes.
+		ddS = convolve(S, kernel, 'valid') 
+
+		# first, find all of the positive derivative values. going up the peak.
+		# this returns indices of possible candidates. we want to offset by two because
+		# the convolution cuts the array length by len(kernel)-1
+		if (sign == 1) :
+			candidates = np.where(dY > 0)[0] + (len(kernel)-1)
+		elif (sign == -1) :
+			candidates = np.where(dY < 0)[0] + (len(kernel)-1)
+
+		pk = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
+		alpha = mean + (sign * threshold)
+
+		if (sign == 1) :
+			pk = np.array(pk)[Y[pk] > alpha]
+		elif (sign == -1) :
+			pk = np.array(pk)[Y[pk] < alpha]
+
+		# list comprehension version of toss np.array for minimum separation discrimination.
+		# list should be faster for 'append' operations, especially when there are many false peaks.
+
+		toss = [i+1 for i in range(len(pk)-1) if ((pk[i+1]-pk[i]) < minsep)]
+		# remove peaks within the minimum separation... can do this smarter.
+		#toss = np.array([])
+		#for i in range(len(pk)-1) :
+			# if the peaks are closer than the minimum separation and the second peak is
+			# larger than the first, throw out the first peak. 
+			#if ((pk[i+1]-pk[i]) < minsep) :
+			#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
+				#toss = np.append(toss, i+1)
+
+		pkm = np.delete(pk, toss)
+
+		# cons = 5 # consecutively increasing values preceeding a peak
+		# for j in range(len(pkm))
+		# 	for k in range(cons)
+
+		# use the 'trig' namedtuple for debugging / accessing each step of the peak detection.
+		#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
+		
+		# create a list of 'Peak' objects with these peak locations.
+		self.peaks = [Peak(i) for i in pkm]
+		self.npk = len(self.peaks)
+
+	def fit_pulses(self):
+		'''
+		apply non-linear least squares fitting to one or multiple peaks on a given channel. use 'ax' to optionally
+		superimpose fit as a scatterplot onto input data plot.
+
+		inputs:
+		- data : array containing pulses to fit
+		- avg : baseline of the signal
+		- rms : std dev of the signal
+		- peaks : array of peak locations
+		- fudge :  used in the case that there are consecutive peaks closer than the specified
+			fit length. 'fudge' moves current fit 'fudge' many data points back from next peak,
+			to try and ensure the following peak doesn't disturb the current peak's fit. 
+		- fit_length : number of points data points used for least squares fit.
+			no more than about 3x expected tau is typical.
+
+		return: 
+		- tau : array of fitted tau values. same length as number of input peaks.
+		'''
+
+		# assumption: data is modeled by a 3 parameter decaying exponential.
+		M = 3
+
+		# 			   PARAMETER FORMAT: ([A, l, off]
+		#				 MIN 					MAX
+		bounds = ([0.0, 1.0/100, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
+		guess = [0.008, 1.0/35, self.avg]
+		
+		# use fit_length if the peaks are far away. if they are close, 
+		# fit only as much data as is available between peaks.
+
+		# exact peak location is fuzzy in presence of noise, so
+		# include a 'fudge factor' to improve fit for consecutive peaks.
+
+		end = len(data)-1 
+		peaks = np.append(peaks, end) 
+
+		for j in range(self.npk) :
+			if self.peaks[j+1].index-self.peaks[j].index < Pixel.fit_length : 
+				yi = self.data[self.peaks[j].index:self.peaks[j+1].index-Pixel.fudge]
+			else :								  
+				yi = self.data[self.peaks[j].index:self.peaks[j].index+Pixel.fit_length]
+			N=len(yi)
+			xi = np.arange(N)
+
+			if rms == 0 : # for fitting ideal/fake data without noise
+				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+					              check_finite=False, bounds=bounds, method='trf')
+			else : # for real data
+				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+					             sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
+					             bounds=bounds, method='trf')
+
+			# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, \
+			# 		             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
+			# 		             bounds=bounds, method='trf')
+
+
+			f_xi = model_func(xi, *par)
+			Xsq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
+			
+			self.peaks[i].tau = 1.0/par[1]
+			self.peaks[i].chisquare = Xsq
+			# P[j] = pval
+			# Q[j] = 1-pval
+
+			# if axis object is provided, add the fit as a scatter plot to the axis.
+			# if isinstance(ax, ax_obj) :
+			# 	ax.scatter(xi+peaks[j], model_func(xi,*par), marker = 'o')
+
+
+
+
+	def filter_peaks(self):
+		a = 'filter each peak'
+
+	def pixel_type(self):
+		self.magabob = 0
+
+class Peak(object):
+
+	def __init__(self, index):
+		self.index = index
+		self.tau = None
+		self.chisq = None
+		
+
+class Event(object):
+
+	def __init__(self):
+		self.radius = 20
 
 
 def get_wfm_one(infile, ch, npt, plt) :
