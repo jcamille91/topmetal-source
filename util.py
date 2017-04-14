@@ -143,6 +143,7 @@ class Sensor(object):
 		npt defaults to length of daq event (25890 for current dataset) 
 		for zero input or a value exceeding dataset length.
 		'''
+		shaper_offset = 10 # for now, shaper offset is just fixed.
 
 		with h5py.File(self.infile,'r') as hf: # open file for read, then close
 			d = hf.get(self.daq_event)
@@ -153,7 +154,7 @@ class Sensor(object):
 		if ((npt == False) or (npt > self.daq_length)) :
 			print('invalid "npt" input. set calculation length to raw data array length =', length)
 			
-			# list of 'Pixel' objects
+			# iterate over a list of 'Pixel' objects, supply data, avg, and rms.
 			self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
 		else :
 			self.pix = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
@@ -166,14 +167,21 @@ class Sensor(object):
 		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
 		print(npt, "points used in calcualtion for each channel's baseline and rms in Volts.")
 
-	def analyze(self, select):
+	def analyze(self, select, shaper_offset, fudge):
 		''' find peaks, fit peaks, then apply trapezoidal shaper
 		to data set. 
 		input :
 		-select : if 0, analyze all channels. otherwise, provide list of channels to analyze.
+		-shaper_offset : 
 		'''
+		# these class attributes are used by methods for analysis.
+		Pixel.daq_length = self.daq_length 
+		Pixel.shaper_offset = shaper_offset
+		Pixel.fudge = fudge
 
-		self.guy = 'j'
+		### temporarily fixing l, k here. they'll be incorporated some other way later.
+		Pixel.l = 500
+		Pixel.k = 100
 
 class Pixel(object):
 	'''
@@ -181,11 +189,14 @@ class Pixel(object):
 	class attributes: (for all instances)
 	-row : dimension of pixel array. 
 	'''
+	# Pixel.daq_length class attribute is defined once 
+	# the data length is found in the sensor class instance.
 	row = 72
 	noisethresh = 0.002
 	fit_length = 300
 	fudge = 10
 	minsep = 50
+
 	def __init__(self, number, data, avg, rms):
 		'''
 		Pixel attributes :
@@ -196,6 +207,10 @@ class Pixel(object):
 		-avg : average voltage
 		-rms : rms voltage
 		-peaks : a list of 'Peak' objects
+		-offset : for shifting shaper transition points +/- -> fwd/bkwd.
+		 useful because it's hard to get peak locations perfect, and because we want to
+		 avoid transition on peaks' rise time, which won't account for in our fit model.
+		-daq_length : length of the dataset. would like to incorporate this automatically as 
 		-npk : total number of peaks
 		-type : descriptor for pixel. some pixels are okay, others are noisy,
 		3 are for demux and some are clearly not functioning correctly
@@ -208,6 +223,9 @@ class Pixel(object):
 		self.avg = avg
 		self.rms = rms
 		self.peaks = []
+		self.offset = shaper_offset
+		self.daq_length = daq_length
+
 		self.npk = 0
 		if (self.rms > Pixel.noisethresh) :
 			self.type = 'noisy'
@@ -360,10 +378,64 @@ class Pixel(object):
 
 
 	def filter_peaks(self):
-		a = 'filter each peak'
+
+		''' apply trapezoidal filter to data. at each peak location provided, switch
+		to the desired filter parameters, l, k, M. also provide the average baseline of
+		the input data. l,k,M, should have as many elements as there are peaks. '''
+
+		# for now just fix l,k.
+		l_arr = np.ones(npk, dtype = c_ulong)*Sensor.l
+		k_arr = np.ones(npk, dtype = c_ulong)*Sensor.k
+
+		LR = pk2LR(peaks, offset, self.daq_length)
+
+		# print('l', l)
+		# print('k', k)
+		# print('M', M)
+		# print('number of peaks =', npk)
+		# print('LEFT = ', LR[0])
+		# print('RIGHT = ', LR[1])
+
+		PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
+		self.filt = np.empty_like(self.data)
+		lib = CDLL("shaper.so")
+		lib.shaper_multi.restype = None
+		lib.shaper_multi.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t), c_double]
+		lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
+
+		self.filt = np.array(self.filt)
+
+	def pk2LR(self) :
+	
+	''' put peak locations into arrays of left and rights for trapezoidal shaper.
+	 apply desired offset. Both arrays are the same length as input 'peaks' array.
+
+	return:
+	- LEFT and RIGHT : beginning and end points for each set of 
+	trapezoidal filter parameters l,k, and M.'''
+	
+	LEFT = np.zeros(npk)
+	RIGHT = np.zeros(npk)
+
+	for i in range(self.npk-1):
+		LEFT[i]  = self.peaks[i]   + self.offset
+		RIGHT[i] = self.peaks[i+1] + self.offset
+		
+	LEFT[0] = 0
+	LEFT[self.npk-1] = self.peaks[npk-1] + self.offset
+	RIGHT[self.npk-1] = self.daq_length
+
+	# trapezoidal filter uses size_t, or c_ulong, as its datatype
+	# for left and right. they index locations possibly larger than int allows.
+	LEFT = np.array(LEFT, dtype = c_ulong)
+	RIGHT = np.array(RIGHT, dtype = c_ulong)
+
+	return (LEFT, RIGHT)
+
+
 
 	def pixel_type(self):
-		self.magabob = 0
+			self.magabob = 0
 
 class Peak(object):
 
