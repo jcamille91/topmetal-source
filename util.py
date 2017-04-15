@@ -122,7 +122,7 @@ class Sensor(object):
 		-daq_length : number of datapoints per pixel in a dataset (daq_event)
 		-sensor_channel : in case of a sensor with multiple 72x72 arrays, use this to select one.
 		*** currently setup for analysis of just one 72x72 sensor. ***
-		-tsample : sampling period for a single pixel. 
+		-tsample : sampling period for a single pixel. (npt per frame * master sampling period)
 		'''
 		self.select = None 
 		self.infile = infile
@@ -175,8 +175,7 @@ class Sensor(object):
 		- nbins: number of desired bins.
 		- end: cutoff point for histogram x-axis
 		- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
-		 plot in ipython, supply 0 for axis to generate a standalone fig,axis plot.
-
+		 plot, supply 0 for axis to generate a standalone fig,axis plot.
 		'''
 
 		# build a list of all the RMS noise values, excluding the dead channels.
@@ -215,7 +214,32 @@ class Sensor(object):
 		
 		input:
 		-select : provide python list of desired channels. provide empty list to analyze all channels.
-		-shaper_offset : 
+		
+		(peak detection)
+		-minsep : minimum separation from peaks. if two are more peaks are within minsep,
+		only the first peak candidate is saved.
+		-threshold : minimum value for accepted peaks. candidate peaks
+		with max value smaller than the threshold are rejected.
+
+		(tau fitting)
+		-fit_length : number of datapoints to fit. generally (2-3) expected tau in length.
+		-fudge : if consecutive peaks are closer than fit_length, the procedure fits the 
+		 smaller space between the two consecutive peaks. In this case, 'fudge' many points 
+		 are removed from the end of the fit, to try and ensure the tail of the fit 
+		 does not catch the rise of the next peak.
+
+		(trapezoidal filter)
+		-l, k, M : trapezoidal filter parameters. 
+		 l-k specifies the flat-top duration.
+		 l specifies the delay of the filter
+		 k specifies the rise time to the flat top
+		 M specifies the time constant of the pulse to be filtered.
+		-shaper_offset : shaper transitions parameters (l, k, M) at each
+		 peak location. offset moves the transition fwd/bkwd (+/-) 
+		 the specified number of indices. this is useful to avoid 
+		 transitioning parameters after the peak has already begun
+		 (it won't yield a trapezoidal response) 
+
 		'''
 		# these class attributes are used by methods for analysis.
 		Pixel.daq_length = self.daq_length 
@@ -235,7 +259,8 @@ class Sensor(object):
 
 		else :
 			for i in select : # analyze only pixels in the 'select' list.
-				c = 'd'
+				self.pix[i].peak_det()
+				self.pix[i].fit_pulses()
 
 class Pixel(object):
 	'''
@@ -247,11 +272,15 @@ class Pixel(object):
 	# the data length is found in the sensor class instance.
 	row = 72
 	noisethresh = 0.002
-	fit_length = 300
-	fudge = 10
-	minsep = 50
+
+	# these attributes are set when Sensor.analyze()
+	# they  pertain to the analysis chain.
 	shaper_offset = None
 	daq_length = None
+	fit_length = None
+	fudge = None
+	minsep = None
+
 	def __init__(self, number, data, avg, rms):
 		'''
 		Pixel attributes :
@@ -287,7 +316,7 @@ class Pixel(object):
 		else :
 			self.type = None
 
-	def peak_det(self, threshold, minsep, sgwin = 15, sgorder = 4, sign = 1):
+	def peak_det(self, threshold = 0.006, minsep = 40, sgwin = 15, sgorder = 4, sign = 1):
 		''' 
 		input:
 		- data : numpy array with peaks to look for.
@@ -390,24 +419,21 @@ class Pixel(object):
 		M = 3
 
 		# 			   PARAMETER FORMAT: ([A, l, off]
-		#				 MIN 					MAX
+		#				 MIN 								MAX
 		bounds = ([0.0, 1.0/100, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
 		guess = [0.008, 1.0/35, self.avg]
-		
-		# use fit_length if the peaks are far away. if they are close, 
-		# fit only as much data as is available between peaks.
 
-		# exact peak location is fuzzy in presence of noise, so
-		# include a 'fudge factor' to improve fit for consecutive peaks.
-
-		end = len(data)-1 
-		peaks = np.append(peaks, end) 
+		# include a 'fake' peak to act as endpoint for last iteration.
+		self.peaks.append(Peak(Pixel.daq_length-1))
 
 		for j in range(self.npk) :
+			# if peaks are closer than fit_length, fit the space between them minus 'fudge'.
 			if self.peaks[j+1].index-self.peaks[j].index < Pixel.fit_length : 
 				yi = self.data[self.peaks[j].index:self.peaks[j+1].index-Pixel.fudge]
+			# if peaks are farther than fit_length apart, use fit_length.
 			else :								  
 				yi = self.data[self.peaks[j].index:self.peaks[j].index+Pixel.fit_length]
+			
 			N=len(yi)
 			xi = np.arange(N)
 
@@ -439,7 +465,9 @@ class Pixel(object):
 			# if isinstance(ax, ax_obj) :
 			# 	ax.scatter(xi+peaks[j], model_func(xi,*par), marker = 'o')
 
-
+			# remove the 'fake' peak now that we're done iterating over
+			# the fit procedure.
+			self.peaks.pop()
 
 
 	def filter_peaks(self):
