@@ -167,21 +167,75 @@ class Sensor(object):
 		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
 		print(npt, "points used in calcualtion for each channel's baseline and rms in Volts.")
 
-	def analyze(self, select, shaper_offset, fudge):
-		''' find peaks, fit peaks, then apply trapezoidal shaper
-		to data set. 
-		input :
-		-select : if 0, analyze all channels. otherwise, provide list of channels to analyze.
+	def noise_hist(self, nbins=2000, end=0.003, axis=0):
+		''' make histogram of noise across 5184 channels. 
+		1 dimensional histogram plot.
+		inputs:
+		- data: 1D numpy array of data 
+		- nbins: number of desired bins.
+		- end: cutoff point for histogram x-axis
+		- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
+		 plot in ipython, supply 0 for axis to generate a standalone fig,axis plot.
+
+		'''
+
+		# build a list of all the RMS noise values, excluding the dead channels.
+		rmsvalues = [self.pix[i].rms for i in range(self.dead, self.nch)]
+
+		if isinstance(axis, ax_obj) : # axis supplied
+			axis.set_title("Sensor Noise Histogram")
+			axis.hist(rmsvalues, nbins)
+			axis.set_xlabel('Volts RMS')
+			axis.set_ylabel('# of channels (5181 total)')
+			axis.set_title('Sensor Noise')
+			axis.set_xlim(0,end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+
+		else : 			# no axis supplied, make standalone plot.
+			fig = plt.figure(1)
+			axis = fig.add_subplot(111)
+			axis.set_title("Sensor Noise Histogram")
+			axis.hist(rmsvalues, nbins)
+			axis.set_xlabel('Volts RMS')
+			axis.set_ylabel('# of channels (5181 total)')
+			axis.set_title('Sensor Noise')
+			axis.set_xlim(0, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+			fig.show()
+
+
+
+	def analyze(self, select = [], shaper_offset = 20, fudge = 10):
+		''' simple analysis chain: 
+		1. find peaks 
+		2. fit peaks 
+		3. apply trapezoidal shaper with fitted tau to dataset
+		
+		input:
+		-select : provide python list of desired channels. provide empty list to analyze all channels.
 		-shaper_offset : 
 		'''
 		# these class attributes are used by methods for analysis.
 		Pixel.daq_length = self.daq_length 
 		Pixel.shaper_offset = shaper_offset
 		Pixel.fudge = fudge
-
-		### temporarily fixing l, k here. they'll be incorporated some other way later.
-		Pixel.l = 500
+		Pixel.fit_length = 300
+		Pixel.l = 500 # temporarily fixing l and k shaper parameters
 		Pixel.k = 100
+		Pixel.fit_length = 300
+		Pixel.minsep = 50
+		Pixel.noisethresh = 0.002
+
+		if not select : # if list is empty, analyze all pixels
+			for i in range(self.nch) :
+				a = 'b'
+				# analyze all the pixels
+
+		else :
+			for i in select : # analyze only pixels in the 'select' list.
+				c = 'd'
 
 class Pixel(object):
 	'''
@@ -196,7 +250,8 @@ class Pixel(object):
 	fit_length = 300
 	fudge = 10
 	minsep = 50
-
+	shaper_offset = None
+	daq_length = None
 	def __init__(self, number, data, avg, rms):
 		'''
 		Pixel attributes :
@@ -223,8 +278,8 @@ class Pixel(object):
 		self.avg = avg
 		self.rms = rms
 		self.peaks = []
-		self.offset = shaper_offset
-		self.daq_length = daq_length
+		self.tau = None
+		self.chisq = None
 
 		self.npk = 0
 		if (self.rms > Pixel.noisethresh) :
@@ -256,32 +311,37 @@ class Pixel(object):
 		f = savgol_scipy(self.data, sgwin, sgorder) # smooth data
 		kernel = [1, 0, -1]	# calculate each derivative
 		df = convolve(f, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
-		S = np.sign(df) # normalize derivative to 1. 1 increasing, -1 decreasing, 0 const.
+		dfn = np.sign(df) # normalize derivative to 1. 1 increasing, -1 decreasing, 0 const.
 		
 		# the second derivative of the normalized derivative.
 		# should only have non-zero values for peaks and valleys, where the value of the derivative changes.
-		ddS = convolve(S, kernel, 'valid') 
+		ddfn = convolve(dn, kernel, 'valid') 
 
 		# first, find all of the positive derivative values. going up the peak.
 		# this returns indices of possible candidates. we want to offset by two because
 		# the convolution cuts the array length by len(kernel)-1
 		if (sign == 1) :
-			candidates = np.where(dY > 0)[0] + (len(kernel)-1)
+			candidates = np.where(dfn > 0)[0] + (len(kernel)-1)
 		elif (sign == -1) :
-			candidates = np.where(dY < 0)[0] + (len(kernel)-1)
+			candidates = np.where(dfn < 0)[0] + (len(kernel)-1)
 
-		pk = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
+		pk = sorted(set(candidates).intersection(np.where(ddfn == -sign*2)[0] + 1))
 		alpha = mean + (sign * threshold)
 
-		if (sign == 1) :
-			pk = np.array(pk)[Y[pk] > alpha]
+		if (sign == 1) :	# apply threshold to the raw data, not the smoothed data 
+			pk = np.array(pk)[self.data[pk] > alpha]
 		elif (sign == -1) :
-			pk = np.array(pk)[Y[pk] < alpha]
+			pk = np.array(pk)[self.data[pk] < alpha]
 
 		# list comprehension version of toss np.array for minimum separation discrimination.
 		# list should be faster for 'append' operations, especially when there are many false peaks.
-
+		# 'toss' gives the indices of the bad peaks in the array of peak locations, 
+		# not the indices of the peaks in the dataset.
 		toss = [i+1 for i in range(len(pk)-1) if ((pk[i+1]-pk[i]) < minsep)]
+		
+		# 'badpk' would give the location of thrown out peaks in the dataset, incase we want this later.
+		#badpk = [pk[i+1] for i in range(len(pk)-1) if ((pk[i+1]-pk[i]) < minsep)]
+
 		# remove peaks within the minimum separation... can do this smarter.
 		#toss = np.array([])
 		#for i in range(len(pk)-1) :
@@ -291,6 +351,8 @@ class Pixel(object):
 			#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
 				#toss = np.append(toss, i+1)
 
+		# pkm = peaks with minimum separation discrimination.
+		# pk = peaks without minimum separation discrimination.
 		pkm = np.delete(pk, toss)
 
 		# cons = 5 # consecutively increasing values preceeding a peak
@@ -363,10 +425,13 @@ class Pixel(object):
 
 
 			f_xi = model_func(xi, *par)
-			Xsq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
+			chisq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
 			
+			# each Pixel object has a list of peak objects,
+			# determined by the number of peaks found in peak detection.
+			# insert the fitted tau and chisquare to their respective peak.
 			self.peaks[i].tau = 1.0/par[1]
-			self.peaks[i].chisquare = Xsq
+			self.peaks[i].chisq = chisq
 			# P[j] = pval
 			# Q[j] = 1-pval
 
@@ -407,32 +472,36 @@ class Pixel(object):
 
 	def pk2LR(self) :
 	
-	''' put peak locations into arrays of left and rights for trapezoidal shaper.
-	 apply desired offset. Both arrays are the same length as input 'peaks' array.
+		''' put peak locations into arrays of left and rights for trapezoidal shaper.
+		 apply desired offset. Both arrays are the same length as input 'peaks' array.
 
-	return:
-	- LEFT and RIGHT : beginning and end points for each set of 
-	trapezoidal filter parameters l,k, and M.'''
+		return:
+		- LEFT and RIGHT : beginning and end points for each set of 
+		trapezoidal filter parameters l,k, and M.'''
 	
-	LEFT = np.zeros(npk)
-	RIGHT = np.zeros(npk)
+		LEFT = np.zeros(npk)
+		RIGHT = np.zeros(npk)
 
-	for i in range(self.npk-1):
-		LEFT[i]  = self.peaks[i]   + self.offset
-		RIGHT[i] = self.peaks[i+1] + self.offset
-		
-	LEFT[0] = 0
-	LEFT[self.npk-1] = self.peaks[npk-1] + self.offset
-	RIGHT[self.npk-1] = self.daq_length
+		for i in range(self.npk-1):
+			LEFT[i]  = self.peaks[i]   + self.offset
+			RIGHT[i] = self.peaks[i+1] + self.offset
+			
+		LEFT[0] = 0
+		LEFT[self.npk-1] = self.peaks[npk-1] + self.offset
+		RIGHT[self.npk-1] = self.daq_length
 
-	# trapezoidal filter uses size_t, or c_ulong, as its datatype
-	# for left and right. they index locations possibly larger than int allows.
-	LEFT = np.array(LEFT, dtype = c_ulong)
-	RIGHT = np.array(RIGHT, dtype = c_ulong)
+		# trapezoidal filter uses size_t, or c_ulong, as its datatype
+		# for left and right. they index locations possibly larger than int allows.
+		LEFT = np.array(LEFT, dtype = c_ulong)
+		RIGHT = np.array(RIGHT, dtype = c_ulong)
 
-	return (LEFT, RIGHT)
+		return (LEFT, RIGHT)
 
-
+	def text_dump(self, select, values) :
+		''' output data values over channels
+		onto the terminal.
+		'''
+		self.blob = 'fff'
 
 	def pixel_type(self):
 			self.magabob = 0
