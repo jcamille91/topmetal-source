@@ -289,7 +289,7 @@ class Sensor(object):
 
 		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
 
-	def plot_waveform(self, pixels, choose, fit = False lr = None) :
+	def plot_waveform(self, pixels, choose, fit = False, lr = None) :
 		'''
 		This function plots a series of channels to 
 		observe a trend or difference. In ipython, press enter to 
@@ -304,6 +304,7 @@ class Sensor(object):
 
 		x = np.arange(self.daq_length)
 
+		# setup
 		fig = plt.figure()
 		ax = fig.add_subplot(111)
 		ax.set_title("multich plot")
@@ -311,6 +312,8 @@ class Sensor(object):
 		ax.step(x, np.zeros(self.daq_length))
 		fig.show()
 		ax.figure.canvas.draw()
+
+		# plot raw data, optionally superimpose fits.
 		if (choose == 'd') :
 			print('plotting raw data')
 			for i in pixels :
@@ -319,13 +322,15 @@ class Sensor(object):
 				ax.cla()
 				ax.set_title("channel no. %i" % i)
 				ax.step(x, plt_ch)
-				if (fit not False) :
-					for j in range(self.pix[i].npk):
-						self.pix[i].peaks[j].index
-						self.pix[i].peaks[j].fit_par
-						self.pix[i].peaks[j].fit_pts
+				if fit :
+					for j in range(self.pix[i].npk) :
+						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
+							55(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
+							marker='o')
+
 				ax.figure.canvas.draw()
-		
+
+		# plot filtered data.
 		elif (choose == 'f') :
 			print('plotting filtered data')
 			for i in pixels :
