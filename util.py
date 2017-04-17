@@ -15,7 +15,7 @@ from ctypes import c_ulong, c_int, c_double, c_float
 
 # CDLL used to load desired shared library. 
 # POINTER creates C pointer object. byref() for passing pointers.
-# ctypes Structure object allows creation of true C 'struct'.
+# ctypes Structure object allows creation of C 'struct'.
 from ctypes import CDLL, POINTER, byref, Structure
 
 import numpy.ctypeslib as npct
@@ -101,9 +101,10 @@ class Sensor(object):
 	list of 'Pixel' objects, which each contain a list of 'Peak' objects.
 	'''
 
+	# some weird channels to set aside / analyze differently.
 	BAD  = np.array([268,269,340,718,719,805,806,1047,1048,1617,1618,2037,2038,
     2188,2189,2260,2396,2397, 2539, 2540, 2768, 2769, 4868])
-	EXTRA = np.array([1898, 1899, 1970])
+	NOISY = np.array([1898, 1899, 1970])
 
 	def __init__(self, infile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble.h5'):
 		''' 
@@ -214,8 +215,8 @@ class Sensor(object):
 
 
 	def analyze(self, select = [], noisethresh = 0.002,
-				minsep = 50, threshold = 0.006,  	   # peak det
-			    fit_length = 300, fudge = 20,   	   # lsq fit
+				minsep = 50, threshold = 0.006,  	   			   # peak det
+			    fit_length = 300, fudge = 20,   	   			   # lsq fit
 			    l = 500, k = 100, M_def = 40, shaper_offset = 20): # shaper
 		''' analysis chain: 
 		1. find peaks 
@@ -287,6 +288,56 @@ class Sensor(object):
 		'''
 
 		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
+
+	def plot_waveform(self, pixels, choose, fit = False lr = None) :
+		'''
+		This function plots a series of channels to 
+		observe a trend or difference. In ipython, press enter to 
+		progess to the next channel.
+
+		input: 
+		- pixels : 1D nparray/list containing Pixel indices to plot. 
+		- choose : 'd' plots raw data, 'f' plots filtered data.
+		- fit : set fit to 'True' to impose scatter plot for fits 
+			of a channel's peaks onto axis plotting the raw data.
+		'''
+
+		x = np.arange(self.daq_length)
+
+		fig = plt.figure()
+		ax = fig.add_subplot(111)
+		ax.set_title("multich plot")
+
+		ax.step(x, np.zeros(self.daq_length))
+		fig.show()
+		ax.figure.canvas.draw()
+		if (choose == 'd') :
+			print('plotting raw data')
+			for i in pixels :
+				input("press enter for next channel")
+				plt_ch = self.pix[i].data
+				ax.cla()
+				ax.set_title("channel no. %i" % i)
+				ax.step(x, plt_ch)
+				if (fit not False) :
+					for j in range(self.pix[i].npk):
+						self.pix[i].peaks[j].index
+						self.pix[i].peaks[j].fit_par
+						self.pix[i].peaks[j].fit_pts
+				ax.figure.canvas.draw()
+		
+		elif (choose == 'f') :
+			print('plotting filtered data')
+			for i in pixels :
+				input("press enter for next channel")
+				plt_ch = self.pix[i].filt
+				ax.cla()
+				ax.set_title("channel no. %i" % i)
+				ax.step(x, plt_ch)
+				ax.figure.canvas.draw()
+		else :
+			print('unknown input: choose "f" for filtered data, "d" for raw data.')
+
 
 class Pixel(object):
 	'''
@@ -505,6 +556,8 @@ class Pixel(object):
 			# insert the fitted tau and chisquare to their respective peak.
 			self.peaks[j].tau = 1.0/par[1]
 			self.peaks[j].chisq = chisq
+			self.peaks[j].fit_par = par
+			self.peaks[j].fit_pts = xi
 			# P[j] = pval
 			# Q[j] = 1-pval
 
@@ -524,11 +577,11 @@ class Pixel(object):
 		
 		if (self.npk == 0) : # no peaks found, use default M.
 			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
-				c_ulong(Pixel.l), c_ulong(Pixel.k), c_ulong(Pixel.M_def), c_double(self.avg))
+				c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(Pixel.M_def), c_double(self.avg))
 
 		if (self.npk == 1) : # one peak found.
 			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
-				c_ulong(Pixel.l), c_ulong(Pixel.k), c_ulong(self.peaks[0].tau), c_double(self.avg))
+				c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(self.peaks[0].tau), c_double(self.avg))
 
 		if (self.npk > 1) : # multiple peaks found.
 			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
@@ -576,7 +629,35 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def plot_data
+	def plot(self, choose, axis = 0, lr = None) :
+		''' 
+		1 dimensional 'step' plot.
+		inputs:
+		- axis : supply a pyplot axis object to plot to. For use as a quick and dirty
+		 plot in ipython, supply 0 for axis to generate a standalone fig, axis plot.
+		- lr : tuple to select portion of dataset to plot. default is entire dataset.
+		- choose : string to select 'data' or 'filt'
+		'''
+		if (lr == None) :
+			lr = (0, self.daq_length-1)
+
+		xaxis = np.arange(self.daq_length)[lr[0]:lr[1]]
+		if (choose == 'd') :
+			d = self.data[lr[0]:lr[1]]
+
+		elif (choose == 'f') :
+			d = self.filt[lr[0]:lr[1]]
+
+		else :
+			print('unknown input: choose "f" for filtered data, "d" for raw data.')
+			d = 0
+
+		if isinstance(axis, ax_obj) :	# if an axis is supplied, plot to it.
+			axis.step(xaxis, d)
+
+		else :	# no axis, make a quick standalone plot.
+			plt.step(xaxis, d)
+			plt.show()
 
 	def text_dump(self, select, values) :
 		''' output data values over channels
