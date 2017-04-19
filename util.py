@@ -101,10 +101,22 @@ class Sensor(object):
 	list of 'Pixel' objects, which each contain a list of 'Peak' objects.
 	'''
 
-	# some weird channels to set aside / analyze differently.
-	BAD  = np.array([268,269,340,718,719,805,806,1047,1048,1617,1618,2037,2038,
-    2188,2189,2260,2396,2397, 2539, 2540, 2768, 2769, 4868])
-	NOISY = np.array([1898, 1899, 1970])
+	# channels with possibly charge trapped.
+	CHARGED  = [268,269,340,718,719,805,806,1047,1048,1617,1618,2037,2038,
+    2188,2189,2260,2396,2397, 2539, 2540, 2768, 2769, 4868]
+	
+	# super noisy channels, larger than signals we are looking for.
+	NOISY = [1898, 1899, 1970]
+
+	# these channels are tied to a potential, don't contain any signal.
+	# used to identify each frame when demuxing data.
+	DEMUXCH = [0,1,2]
+	
+	# these non-standard channels yield bad results when submitted to analysis routine.
+	# just filter them separately, or maybe even set some to 0 because of very negative values
+	# that mess up 2d pixel images.
+	BAD = CHARGED + NOISY + DEMUXCH
+	BAD.sort()
 
 	def __init__(self, infile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble.h5'):
 		''' 
@@ -148,7 +160,6 @@ class Sensor(object):
 		npt defaults to length of daq event (25890 for current dataset) 
 		for zero input or a value exceeding dataset length.
 		'''
-		shaper_offset = 10 # for now, shaper offset is just fixed.
 
 		with h5py.File(self.infile,'r') as hf: # open file for read, then close
 			d = hf.get(self.daq_event)
@@ -214,18 +225,22 @@ class Sensor(object):
 
 
 
-	def analyze(self, select = [], noisethresh = 0.002,
+	def analyze(self, simple = False, select = [], noisethresh = 0.002,
 				minsep = 50, threshold = 0.006,  	   			   # peak det
 			    fit_length = 300, fudge = 20,   	   			   # lsq fit
-			    l = 500, k = 100, M_def = 40, shaper_offset = 20): # shaper
+			    l = 150, k = 20, M_def = 40, shaper_offset = 20): # shaper
 		''' analysis chain: 
 		1. find peaks 
 		2. fit peaks 
 		3. apply trapezoidal shaper with fitted tau to dataset
 		
 		input:
+		-simple : set 'True' to just filter all the channels with the default filter parameters.
+		 no peak detection / exponential decay fitting.
 		-select : provide python list of desired channels. provide empty list to analyze all channels.
-		
+		-noisethresh : threshold in volts to classify channels. channels above this value are labeled with
+		a string  as 'noisy'.
+
 		(peak detection)
 		-minsep : minimum separation from peaks. if two are more peaks are within minsep,
 		only the first peak candidate is saved.
@@ -268,11 +283,27 @@ class Sensor(object):
 		Pixel.shaper_offset = shaper_offset
 
 		
-
-		if not select : # if list is empty, analyze all pixels
+		if simple : # do simple analysis, filter everything with default l,k,M.
 			for i in range(self.nch) :
-				a = 'b'
-				# analyze all the pixels
+				self.pix[i].filter_peaks
+
+		elif not select : # if list is empty, analyze all pixels
+			
+			# remove 'BAD' channels from regular analysis
+			ch = [i for i in range(self.nch)]
+			ch = list(set(ch) - set(Sensor.BAD))
+
+			# regular analysis
+			for i in ch:
+				print('channel no. %i' % i)
+				self.pix[i].peak_det()
+				self.pix[i].fit_pulses()
+				self.pix[i].filter_peaks()
+
+			# just default filter bad channels
+			for i in Sensor.BAD :
+				print('bad channel no. %i' % i)
+				self.pix[i].filter_peaks()
 
 		else :
 			for i in select : # analyze only pixels in the 'select' list.
@@ -287,20 +318,27 @@ class Sensor(object):
 		two-dimensional array for making 2d pixellated images.
 		'''
 
-		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
+		self.filt2d = np.array([self.pix[i].filt for i in range(self.nch)])
 
 	def plot_waveform(self, pixels, choose, fit = False, lr = None) :
 		'''
-		This function plots a series of channels to 
-		observe a trend or difference. In ipython, press enter to 
-		progess to the next channel.
+		This function can plot a series of channels. When the user
+		presses 'Enter', the next channel's plot is replaces the prior.
+		User can plot raw data, filtered data, or both with the 
+		peak least squares fits.
 
 		input: 
-		- pixels : 1D nparray/list containing Pixel indices to plot. 
-		- choose : 'd' plots raw data, 'f' plots filtered data.
-		- fit : set fit to 'True' to impose scatter plot for fits 
-			of a channel's peaks onto axis plotting the raw data.
+		-pixels : 1D np.array/list containing Pixel indices to plot. 
+		-choose : 'd' plots raw data, 'f' plots filtered data.
+			'b' plots the raw data and filtered data.
+		-fit : fit == 'True' superimposes scatter plot of fits 
+			for a channel's peaks onto the same axis plotting the raw data.
+		-lr : input a tuple to slice the plot. for example, if the dataset has
+		25890 points, lr = (2000,4000) would only plot points 2000 through 4000.
+		lr defaults to plotting the entire dataset. 
 		'''
+		if not lr :
+			lr = (0, self.daq_length-1)
 
 		x = np.arange(self.daq_length)
 
@@ -310,10 +348,38 @@ class Sensor(object):
 		ax.set_title("multich plot")
 
 		ax.step(x, np.zeros(self.daq_length))
+
 		fig.show()
 		ax.figure.canvas.draw()
 
 		# plot raw data, optionally superimpose fits.
+		if (choose == 'b') :
+			
+			fig2 = plt.figure()
+			ax2 = fig2.add_subplot(111)
+			ax2.step(x, np.zeros(self.daq_length))
+			fig2.show()
+			ax2.figure.canvas.draw()
+
+			print('plotting raw data and filtered data')
+			for i in pixels :
+				input("press enter for next channel")
+				ax.cla()
+				ax.set_title('raw data, channel no. %i' % i)
+				ax.step(x, self.pix[i].data)
+
+				if fit :
+					for j in range(self.pix[i].npk) :
+						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
+							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
+							marker='o')
+				ax2.cla()
+				ax2.set_title('filtered data, channel no. %i' % i) 
+				ax2.step(x, self.pix[i].filt)
+				
+				ax.figure.canvas.draw()
+				ax2.figure.canvas.draw()
+
 		if (choose == 'd') :
 			print('plotting raw data')
 			for i in pixels :
@@ -325,8 +391,8 @@ class Sensor(object):
 				if fit :
 					for j in range(self.pix[i].npk) :
 						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
-							55(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
-							marker='o')
+							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
+							marker='o', color = 'r')
 
 				ax.figure.canvas.draw()
 
@@ -340,9 +406,12 @@ class Sensor(object):
 				ax.set_title("channel no. %i" % i)
 				ax.step(x, plt_ch)
 				ax.figure.canvas.draw()
-		else :
-			print('unknown input: choose "f" for filtered data, "d" for raw data.')
 
+		else :
+			print('unknown input: choose "f" for filtered data, "d" for raw data, or "b" for both.')
+
+	def pixelate_multi():
+		print('y')
 
 class Pixel(object):
 	'''
@@ -354,7 +423,8 @@ class Pixel(object):
 	# shared C library for trapezoidal filter
 	shp_lib = CDLL("shaper.so")
 	
-	# shaper functions arguments
+	# shaper functions arguments. 
+	# one for multiple M (takes peaks_t struct), another for single M dataset.
 	shp_lib.shaper_multi.restype = None
 						  # 	     	in 			out   	 length   peaks_t struct 	baseline
 	shp_lib.shaper_multi.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t), c_double]
@@ -372,7 +442,7 @@ class Pixel(object):
 	# they pertain to the analysis chain.
 	
 	daq_length = None
-	noisethresh = 0.002
+	noisethresh = None
 
 	threshold = None
 	minsep = None
@@ -412,12 +482,14 @@ class Pixel(object):
 		self.peaks = []
 		self.tau = None
 		self.chisq = None
+		self.fit_par = None
+		self.fit_pts = None
 
 		self.npk = 0
-		if (self.rms > Pixel.noisethresh) :
-			self.type = 'noisy'
-		else :
-			self.type = None
+		# if (self.rms > Pixel.noisethresh) :
+		# 	self.type = 'noisy'
+		# else :
+		# 	self.type = None
 
 	def peak_det(self, threshold = 0.006, minsep = 40, sgwin = 15, sgorder = 4, sign = 1):
 		''' 
@@ -495,6 +567,8 @@ class Pixel(object):
 		#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
 		
 		# create a list of 'Peak' objects with these peak locations.
+		self.prepeak = pk
+		self.toss = toss
 		self.peaks = [Peak(i) for i in pkm]
 		self.npk = len(self.peaks)
 
@@ -517,78 +591,99 @@ class Pixel(object):
 		return: 
 		- tau : array of fitted tau values. same length as number of input peaks.
 		'''
+		# only try to fit pulses if the list of peaks contains any peaks.
+		# a list with items returns 'True'. An empty list returns 'False'.
+		if self.peaks :
 
-		# assumption: data is modeled by a 3 parameter decaying exponential.
-		M = 3
+			# if the last peak is too close to the end of the dataset, we won't try to fit it.
+			if (self.daq_length - self.peaks[self.npk-1].index < Pixel.fit_length + Pixel.fudge) :
+				self.peaks.pop()
+				self.npk -= 1
+			# assumption: data is modeled by a 3 parameter decaying exponential.
+			M = 3
 
-		# 			   PARAMETER FORMAT: ([A, l, off]
-		#				 MIN 								MAX
-		bounds = ([0.0, 1.0/100, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
-		guess = [0.008, 1.0/35, self.avg]
+			# 			   PARAMETER FORMAT: ([A, l, off]
+			#				 MIN 								MAX
+			bounds = ([0.0, 1.0/100, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
+			guess = [0.008, 1.0/35, self.avg]
 
-		# include a 'fake' peak to act as endpoint for last iteration.
-		self.peaks.append(Peak(Pixel.daq_length-1))
+			# include a 'fake' peak to act as endpoint for last iteration.
+			self.peaks.append(Peak(Pixel.daq_length-1))
 
-		for j in range(self.npk) :
-			# if peaks are closer than fit_length, fit the space between them minus 'fudge'.
-			if self.peaks[j+1].index-self.peaks[j].index < Pixel.fit_length : 
-				yi = self.data[self.peaks[j].index:self.peaks[j+1].index-Pixel.fudge]
-			# if peaks are farther than fit_length apart, use fit_length.
-			else :								  
-				yi = self.data[self.peaks[j].index:self.peaks[j].index+Pixel.fit_length]
-			
-			N=len(yi)
-			xi = np.arange(N)
+			for j in range(self.npk) :
+				# if peaks are closer than fit_length, fit the space between them minus 'fudge'.
+				if self.peaks[j+1].index-self.peaks[j].index < Pixel.fit_length : 
+					yi = self.data[self.peaks[j].index:self.peaks[j+1].index-Pixel.fudge]
+				# if peaks are farther than fit_length apart, use fit_length.
+				else :								  
+					yi = self.data[self.peaks[j].index:self.peaks[j].index+Pixel.fit_length]
+				
+				N=len(yi)
+				xi = np.arange(N)
 
-			if self.rms == 0 : # for fitting ideal/fake data without noise
-				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
-					              check_finite=False, bounds=bounds, method='trf')
-			else : # for real data
+				# use this if testing with fake data / no noise.
+				# if self.rms == 0 : # for fitting ideal/fake data without noise
+				# 	par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+				# 		              check_finite=False, bounds=bounds, method='trf')
+				# else : # for real data
+					# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+					# 	             sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
+					# 	             bounds=bounds, method='trf')
+
 				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
 					             sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
 					             bounds=bounds, method='trf')
 
-			# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, \
-			# 		             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
-			# 		             bounds=bounds, method='trf')
+				# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, \
+				# 		             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
+				# 		             bounds=bounds, method='trf')
 
 
-			f_xi = model_func(xi, *par)
-			chisq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
-			
-			# each Pixel object has a list of peak objects,
-			# determined by the number of peaks found in peak detection.
-			# insert the fitted tau and chisquare to their respective peak.
-			self.peaks[j].tau = 1.0/par[1]
-			self.peaks[j].chisq = chisq
-			self.peaks[j].fit_par = par
-			self.peaks[j].fit_pts = xi
-			# P[j] = pval
-			# Q[j] = 1-pval
+				f_xi = model_func(xi, *par)
+				chisq, pval = chisquare(f_obs=yi, f_exp=f_xi, ddof=N-M)
+				
+				# each Pixel object has a list of peak objects,
+				# determined by the number of peaks found in peak detection.
+				# insert the fitted tau and chisquare to their respective peak.
+				self.peaks[j].tau = 1.0/par[1]
+				self.peaks[j].chisq = chisq
+				
+				# uncomment these attributes to do plots of fits.
+				# self.peaks[j].fit_par = par
+				# self.peaks[j].fit_pts = xi
+				
+				# Q and p values.
+				# P[j] = pval
+				# Q[j] = 1-pval
 
-			# if axis object is provided, add the fit as a scatter plot to the axis.
-			# if isinstance(ax, ax_obj) :
-			# 	ax.scatter(xi+peaks[j], model_func(xi,*par), marker = 'o')
+				# if axis object is provided, add the fit as a scatter plot to the axis.
+				# if isinstance(ax, ax_obj) :
+				# 	ax.scatter(xi+peaks[j], model_func(xi,*par), marker = 'o')
 
-		# remove the 'fake' peak now that we're done iterating over
-		# the fit procedure.
-		self.peaks.pop()
+			# remove the 'fake' peak now that we're done iterating over
+			# the fit procedure.
 
+			self.peaks.pop()
 
 	def filter_peaks(self):
 
 		''' apply trapezoidal filter to data. peak locations are used to change
 		filter parameters. '''
+
+		# no peaks found, use default M. 
 		
+		# alternatively: to do a simple analysis do NOT run
+		# peak_det or fit_pulses. this leaves npk initialized to 0 for every channel, so we just use default
+		# filtering for every channel.
 		if (self.npk == 0) : # no peaks found, use default M.
 			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
 				c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(Pixel.M_def), c_double(self.avg))
 
-		if (self.npk == 1) : # one peak found.
+		elif (self.npk == 1) : # one peak found.
 			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
 				c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(self.peaks[0].tau), c_double(self.avg))
 
-		if (self.npk > 1) : # multiple peaks found.
+		elif (self.npk > 1) : # multiple peaks found.
 			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.k
 			LR = self.pk2LR()
