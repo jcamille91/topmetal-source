@@ -318,7 +318,46 @@ class Sensor(object):
 		two-dimensional array for making 2d pixellated images.
 		'''
 
-		self.filt2d = np.array([self.pix[i].filt for i in range(self.nch)])
+		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
+
+	def pixelate_multi(self, start, stop, stepsize) :
+
+		''' plot successive pixelated images of the 72*72 sensor.
+		input:
+		- data : a (5184 x number of time samples) numpy array.
+		- start and stop : specify desired points in time to plot.
+		- stepsize : decides how many of the time points to plot. if '1',
+		all of the data is plotted. if '10' for example, each successive
+		10th point in time is plotted. stepsize must divide into integers. 
+		'''
+
+		
+		a = np.arange(start, stop, stepsize)
+		nplot = len(a)
+
+		# get the data into (72 x 72 x npt) array
+		data_2d = np.zeros((self.row, self.row, nplot))
+
+		for i in range(nplot) :
+			data_2d[:,:,i] = np.reshape(self.filt[:,a[i]], (self.row,-1)) # convert to square matrix
+
+
+		fig = plt.figure(1)
+		ax = fig.add_subplot(111)
+		ax.set_title("topmetal data")
+		
+		#im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.viridis, vmin=-0.001, vmax=0.015)
+		#im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.015)
+		im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin=0.0, vmax=0.007)
+		fig.show()
+		im.axes.figure.canvas.draw()
+
+		tstart = time.time()
+		for j in range(nplot) :
+			t = j*stepsize*self.tsample
+			ax.set_title("Time elapsed: %f seconds" % t)
+			im.set_data(data_2d[:,:,j])
+			im.axes.figure.canvas.draw()
 
 	def plot_waveform(self, pixels, choose, fit = False, lr = None) :
 		'''
@@ -410,9 +449,81 @@ class Sensor(object):
 		else :
 			print('unknown input: choose "f" for filtered data, "d" for raw data, or "b" for both.')
 
-	def pixelate_multi():
-		print('y')
+	def pixelate_tri_val(self) :
+		''' provide 72X72 data array on channel status. 0 is a channel with no found peaks.
+		1 is a channel exceeding the max number of peaks. 0.5 is 'normal' channels.
+		'''
 
+		
+		data_2d = np.reshape(self.filt, (self.row, -1)) # convert to square matrix
+		fig = plt.figure(1)
+		ax = fig.add_subplot(111)
+		ax.set_title("pixel_status")
+
+		# make a simple custom 3 value color map (Red, Green, Blue)
+
+		###			LEGEND			###
+		# 0 = BLACK, 0.5 = GREEN, 1.0 = RED
+		#    NONE  		 OK			 BUSY        
+
+		colors = [(0,0,0), (0,1,0), (1,0,0)]
+		nbins = 3
+		cmap_name = 'pix_test'
+		mycolormap = LinearSegmentedColormap.from_list(
+				   cmap_name, colors, N=nbins)
+
+		im = ax.imshow(data_2d, cmap=mycolormap, vmin=0.0, vmax=1.0)
+		fig.show()
+		im.axes.figure.canvas.draw()
+
+	def pixel_status(self):
+
+
+		''' Plot number of peaks found on each of the 5184 channels onto a 2D
+		pixel array.
+		'''
+
+		# list comprehension of the number of peaks for each of the 5184 channels.
+		pkperpix = np.array([self.pix[i].npk for i in range(self.nch)])
+
+		data_2d = np.reshape(pkperpix, (self.row, -1)) # convert to square matrix
+		fig = plt.figure(1)
+		ax = fig.add_subplot(111)
+		ax.set_title("pixel_status")     
+
+		mn = 0
+		mx = np.amax(pkperpix)
+
+		im = ax.imshow(data_2d, cmap=cm.hot, vmin=mn, vmax=mx)
+		fig.show()
+		im.axes.figure.canvas.draw()
+
+
+	def pixelate_single(self, sample):
+		''' Take 5184 channel x 25890 data point array and plot desired points in
+		time as 5184 pixel array.
+		
+		input:
+		- sample : desired point in sample space to plot 0-25889
+		'''
+
+
+		# dark = min(data)
+		# bright = max(data)
+		
+		data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
+
+		fig, ax = plt.subplots()
+
+		# make value bounds for the plot and specify the color map.
+		im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+		fig.colorbar(im)
+		ax.grid(True)
+		fig.show()
+
+
+		plt.close()
+	
 class Pixel(object):
 	'''
 	class for raw data and attributes of a pixel.
@@ -1267,8 +1378,6 @@ def arr2square(data) :
 	return data_2d
 
 def pixel_tri_value(data) :
-
-
 	''' provide 72X72 data array on channel status. 0 is a channel with no found peaks.
 	1 is a channel exceeding the max number of peaks. 0.5 is 'normal' channels.
 	
@@ -1276,7 +1385,8 @@ def pixel_tri_value(data) :
 	1. data: array of length 5184 to be reshaped into 72x72 pixel picture.
 	output:
 	plots 72x72 pixel picture, with a three bin color map. can customize color map
-	if desired. '''
+	if desired. 
+	'''
 
 	row = 72
 	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
