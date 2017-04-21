@@ -153,6 +153,39 @@ class Sensor(object):
 		self.tsample = (4*72**2)*(3.2*10**-8)
 		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels")
 
+	def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
+	    ''' 
+	    C implemented function for de-multiplexing raw data read from the TCP protocol.
+    	the pixel array is time multiplexed, so each frame 
+    	(4 time samples for each of the 5184 pixels) is sequential in memory.
+    	To get this data in time-order (an array of 5184 channels x total number of samples),
+    	we need to find the beginning of data acquisition 'mStart' and input parameters
+    	for the data acquisition.
+
+    	input:
+
+    	(file reading and writing)
+    	-infile : input string for .h5/.hdf5 file containing data to be de-multiplexed.
+    		using "h5dump -A infile.h5" gives information on datatypes and data array shape.
+		-outfile : input string for .h5/.hdf5 file to be created containing 
+			array of raw data (5184 x daq_length).
+		
+		(DAQ parameters)
+		-mStart : When the sensor acquires data, there is some dead time before
+		everything is synchronized and taking meaningful data. Pixels 0-2 are tied to a potential
+		far apart from signal data, so they can easily identify the beginning of a frame. that is, mStart
+		is the first of four time samples of pixel 0.
+		-mChLen : this value refers to the number of time samples per pixel per frame. in this case,
+		there are four time samples per pixel per frame.
+		-mNCh : this refers to the number of channels to be output, also referred to as 'pixels'. This topmetal
+		sensor is a 72x72 square, so there are 5184 pixels.
+		-
+	    '''
+	    lib = CDLL("demux.so")
+	    lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+	    lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+
+
 	def load_pixels(self, npt = 25890):
 		
 		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
