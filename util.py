@@ -105,7 +105,7 @@ class Sensor(object):
 	CHARGED  = [268,269,340,718,719,805,806,1047,1048,1617,1618,2037,2038,
     2188,2189,2260,2396,2397, 2539, 2540, 2768, 2769, 4868]
 	
-	# super noisy channels, larger than signals we are looking for.
+	# exceptionally noisy channels, larger than signals we are looking for.
 	NOISY = [1898, 1899, 1970]
 
 	# these channels are tied to a potential, don't contain any signal.
@@ -151,25 +151,28 @@ class Sensor(object):
 		self.daq_length = None
 		self.sensor_channel = 0
 		self.tsample = (4*72**2)*(3.2*10**-8)
+
+		# demux DAQ parameters
+		self.demuxoutfile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble2.h5'
 		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels")
 
-	def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
-	    ''' 
-	    C implemented function for de-multiplexing raw data read from the TCP protocol.
-    	the pixel array is time multiplexed, so each frame 
-    	(4 time samples for each of the 5184 pixels) is sequential in memory.
-    	To get this data in time-order (an array of 5184 channels x total number of samples),
-    	we need to find the beginning of data acquisition 'mStart' and input parameters
-    	for the data acquisition.
+	def demux(rawinfile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
+		''' 
+		C implemented function for de-multiplexing raw data read from the TCP protocol.
+		the pixel array is time multiplexed, so each frame 
+		(4 time samples for each of the 5184 pixels) is sequential in memory.
+		To get this data in time-order (an array of 5184 channels x total number of samples),
+		we need to find the beginning of data acquisition 'mStart' and input parameters
+		for the data acquisition.
 
-    	input:
+		input:
 
-    	(file reading and writing)
-    	-infile : input string for .h5/.hdf5 file containing data to be de-multiplexed.
-    		using "h5dump -A infile.h5" gives information on datatypes and data array shape.
+		(file reading and writing)
+		-infile : input string for .h5/.hdf5 file containing data to be de-multiplexed.
+			using "h5dump -A infile.h5" gives information on datatypes and data array shape.
 		-outfile : input string for .h5/.hdf5 file to be created containing 
 			array of raw data (5184 x daq_length).
-		
+
 		(DAQ parameters)
 		-mStart : When the sensor acquires data, there is some dead time before
 		everything is synchronized and taking meaningful data. Pixels 0-2 are tied to a potential
@@ -179,11 +182,27 @@ class Sensor(object):
 		there are four time samples per pixel per frame.
 		-mNCh : this refers to the number of channels to be output, also referred to as 'pixels'. This topmetal
 		sensor is a 72x72 square, so there are 5184 pixels.
-		-
-	    '''
-	    lib = CDLL("demux.so")
-	    lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
-	    lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+		-mChOff, mChSpl, mChLen : mChLen is the numeber of time samples per frame.
+		with these four samples, mChSpl are averaged as a data point. mChOff is the number of
+		samples offset from the first sample to begin averaging.
+		example: mChOff = 1, mChLen = 4, mChSpl = 2. the first sample is skipped, the 2nd and 3rd are averaged,
+		and the fourth is ignored.
+		'''
+		# DAQ parameters for this particular dataset.
+
+		rawinfile = '../data_TM1x1/out22.h5'
+		outdmuxfile = '../data_TM1x1/demuxdouble.h5'
+		pixel = 2093
+		mStart = 913
+		mChLen = 4
+		mNCh = 72**2
+		mChOff = 1
+		mChSpl = 2
+		frameSize = (72**2)*4
+
+		lib = CDLL("demux.so")
+		lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+		lib.demux(c_char_p(self.infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 
 	def load_pixels(self, npt = 25890):
@@ -219,6 +238,15 @@ class Sensor(object):
 		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
 		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
 
+	def input_fakedata(self):
+		'''
+		use this function to make data to input to the analysis chain.
+		if using data without noise, be sure to change the RMS input to
+		the fitting procedure.
+		'''
+		b = 'o'
+
+
 	def noise_hist(self, nbins=2000, end=0.003, axis=0):
 		''' make histogram of noise across 5184 channels. 
 		1 dimensional histogram plot.
@@ -227,7 +255,7 @@ class Sensor(object):
 		- nbins: number of desired bins.
 		- end: cutoff point for histogram x-axis
 		- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
-		 plot, supply 0 for axis to generate a standalone fig,axis plot.
+		  plot, supply 0 for axis to generate a standalone fig,axis plot.
 		'''
 
 		# build a list of all the RMS noise values, excluding the dead channels.
@@ -344,6 +372,100 @@ class Sensor(object):
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
 	
+	def selection_hist(self, x_0, y_0, radius, frames, select = []) :
+
+		### make histograms for selection of pixels and frames.
+		### fit the histogram. Yuan used sum of two gaussian functions, let's
+		### see how they unfitted histogram looks first.
+		### plot total fit, then plot the contituent fits.
+
+		''' generate a voltage histogram of signal selection inside of a defined circle.
+			alternatively, provide a list of pixels to use as a selection? how to format this...
+			
+			*** cartesian coordinates -> origin is top left corner. ***
+			*** left is increasing x, down is increasing y. 	    ***
+			
+			input:
+			-x_0, y_0 : center point of a circle to define an event.
+			-radius : distance from center to define circle enclosing event.
+			-frames : python list oftime points / frames to use in calculation. 
+			can choose single point, or multiple. frames do not necessarily need to be contiguous.
+		'''
+
+		if not select :
+			# do the circular distance.
+			
+
+			# linear location in 5184 element array
+			rectangle = [((self.row)*i)+j for i in range(x_0-radius, x_0+radius) for j in range(y_0-radius, y_0+radius)]
+			# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
+			xy = [(self.pix[i].loc, i) for i in rectangle]
+			# if the element is inside of the circle's radius, include it.
+			self.selection = [xy[i][1] for i in range(len(xy)) if np.sqrt((xy[i][0][0]-x_0)**2 + (xy[i][0][1]-y_0)**2) < radius]
+
+
+		else :
+			# use the selected pixels
+			# numpy array of list comprehension of all filtered data to add to histogram.
+			values = np.array([self.pix[i].filt[j] for i in select for j in frames])
+			 
+
+
+	def signal_hist(self, nbins = 10000, begin = -0.03, end = 0.03, axis=0) :
+		''' generate a histogram with the range of signal values we are dealing with.
+		'''
+		# use numpy.ravel() for 1d view of 2d array.
+		# use numpy.flatten() for 1d copy of 2d array.
+		filt1d = self.filt.ravel() 
+
+		if isinstance(axis, ax_obj) : # axis supplied
+			axis.hist(filt1d, nbins)
+			axis.set_xlabel('Volts RMS')
+			axis.set_ylabel('# of channels (5181 total)')
+			axis.set_title('Sensor Noise')
+			axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+
+		else : 			# no axis supplied, make standalone plot.
+			fig = plt.figure(1)
+			axis = fig.add_subplot(111)
+			axis.hist(filt1d, nbins)
+			axis.set_xlabel('Volts')
+			axis.set_ylabel('# of datapoints')
+			axis.set_title('filtered signal values')
+			axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+			fig.show()
+
+	def tau_hist(self, nbins = 10000, begin = -0.03, end = 0.03, axis=0) :
+		''' generate a histogram with the range of tau values we are dealing with.
+		'''
+		# use numpy.ravel() for 1d view of 2d array.
+		# use numpy.flatten() for 1d copy of 2d array.
+		filt1d = self.filt.ravel() 
+
+		if isinstance(axis, ax_obj) : # axis supplied
+			axis.hist(filt1d, nbins)
+			axis.set_xlabel('Volts RMS')
+			axis.set_ylabel('# of channels (5181 total)')
+			axis.set_title('Sensor Noise')
+			axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+
+		else : 			# no axis supplied, make standalone plot.
+			fig = plt.figure(1)
+			axis = fig.add_subplot(111)
+			axis.hist(filt1d, nbins)
+			axis.set_xlabel('Volts')
+			axis.set_ylabel('# of datapoints')
+			axis.set_title('filtered signal values')
+			axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+			fig.show()
 	def reform_data(self) :
 		'''
 		after analyzing the each Pixel's data and getting 
@@ -353,13 +475,13 @@ class Sensor(object):
 
 		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
 
-	def pixelate_multi(self, start, stop, stepsize) :
+	def pixelate_multi(self, start, stop, stepsize, vmin = 0, vmax = 0.007) :
 
 		''' plot successive pixelated images of the 72*72 sensor.
 		input:
-		- data : a (5184 x number of time samples) numpy array.
-		- start and stop : specify desired points in time to plot.
-		- stepsize : decides how many of the time points to plot. if '1',
+		-data : a (5184 x number of time samples) numpy array.
+		-start and stop : specify desired points in time to plot.
+		-stepsize : decides how many of the time points to plot. if '1',
 		all of the data is plotted. if '10' for example, each successive
 		10th point in time is plotted. stepsize must divide into integers. 
 		'''
@@ -381,16 +503,44 @@ class Sensor(object):
 		
 		#im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.viridis, vmin=-0.001, vmax=0.015)
 		#im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.015)
-		im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin=0.0, vmax=0.007)
+		# im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin=-0.004, vmax=0.009)
+		im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin = vmin, vmax = vmax)
+		
 		fig.show()
 		im.axes.figure.canvas.draw()
 
 		tstart = time.time()
 		for j in range(nplot) :
 			t = j*stepsize*self.tsample
-			ax.set_title("Time elapsed: %f seconds" % t)
+			ax.set_title("%i Frames elapsed" % j)
+			#ax.set_title("Time elapsed: %f seconds" % t)
 			im.set_data(data_2d[:,:,j])
 			im.axes.figure.canvas.draw()
+
+	def pixelate_single(self, sample):
+		''' Take 5184 channel x 25890 data point array and plot desired points in
+		time as 5184 pixel array.
+		
+		input:
+		-sample : desired point in sample space to plot 0-25889
+		'''
+
+
+		# dark = min(data)
+		# bright = max(data)
+		
+		data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
+
+		fig, ax = plt.subplots()
+
+		# make value bounds for the plot and specify the color map.
+		im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+		fig.colorbar(im)
+		ax.grid(True)
+		fig.show()
+
+
+		plt.close()
 
 	def plot_waveform(self, pixels, choose, fit = False, lr = None) :
 		'''
@@ -531,31 +681,8 @@ class Sensor(object):
 		fig.show()
 		im.axes.figure.canvas.draw()
 
-
-	def pixelate_single(self, sample):
-		''' Take 5184 channel x 25890 data point array and plot desired points in
-		time as 5184 pixel array.
-		
-		input:
-		- sample : desired point in sample space to plot 0-25889
-		'''
-
-
-		# dark = min(data)
-		# bright = max(data)
-		
-		data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
-
-		fig, ax = plt.subplots()
-
-		# make value bounds for the plot and specify the color map.
-		im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
-		fig.colorbar(im)
-		ax.grid(True)
-		fig.show()
-
-
-		plt.close()
+	def prepare_openCV(self) :
+		a = 'blah'
 	
 class Pixel(object):
 	'''
@@ -1491,7 +1618,6 @@ def pixelate_single(data, sample):
 	fig.show()
 
 
-	plt.close()
 
 def pixelate_multi(data, start, stop, stepsize):
 
