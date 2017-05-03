@@ -439,10 +439,18 @@ class Sensor(object):
 			axis.grid(True)
 			fig.show()	 
 
-		a = np.zeros(5184)
-		a[self.selection] = 1
-		self.pixelate_single(sample = 0, arr=a)
+		# show the region of interest (possible event)
+		# a = np.zeros(5184)
+		# a[self.selection] = 1
+		# self.pixelate_single(sample = 0, arr=a)
 
+		# show the frame that with an event of interest.
+		fig, ax = plt.subplots(1,1)
+		self.pixelate_single(sample = frame, arr=[], axis = ax)
+
+		# add a circle to the event we are analyzing
+		circle = plt.Circle(x_0, y_0, radius, color = 'y', alpha=0.4)
+		ax.add_artist(circle)
 
 	def signal_hist(self, nbins = 10000, begin = -0.03, end = 0.03, axis=0) :
 		''' generate a histogram with the range of signal values we are dealing with.
@@ -499,6 +507,7 @@ class Sensor(object):
 			#axis.set_ylim()
 			axis.grid(True)
 			fig.show()
+
 	def reform_data(self) :
 		'''
 		after analyzing the each Pixel's data and getting 
@@ -508,18 +517,20 @@ class Sensor(object):
 
 		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
 
-	def pixelate_multi(self, start, stop, stepsize, thru = 0, vmin = 0, vmax = 0.007) :
+	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = 0, vmax = 0.007) :
 
-		''' plot successive pixelated images of the 72*72 sensor.
+		''' plot successive pixelated images of the 72*72 sensor. Set 'stepthru' to 'True'
+		to step through each image by keyboard input.
+
 		input:
 		-data : a (5184 x number of time samples) numpy array.
 		-start and stop : specify desired points in time to plot.
 		-stepsize : decides how many of the time points to plot. if '1',
 		all of the data is plotted. if '10' for example, each successive
 		10th point in time is plotted. stepsize must divide into integers. 
+		-stepthru : 
 		'''
 
-		
 		a = np.arange(start, stop, stepsize)
 		nplot = len(a)
 
@@ -529,26 +540,36 @@ class Sensor(object):
 		for i in range(nplot) :
 			data_2d[:,:,i] = np.reshape(self.filt[:,a[i]], (self.row,-1)) # convert to square matrix
 
-
 		fig = plt.figure(1)
 		ax = fig.add_subplot(111)
 		ax.set_title("topmetal data")
-		
-		#im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.viridis, vmin=-0.001, vmax=0.015)
-		#im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.015)
-		# im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin=-0.004, vmax=0.009)
+
 		im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin = vmin, vmax = vmax)
 		
 		fig.show()
 		im.axes.figure.canvas.draw()
 
-		tstart = time.time()
-		for j in range(nplot) :
-			t = j*stepsize*self.tsample
-			ax.set_title("%i Frames elapsed" % j)
-			#ax.set_title("Time elapsed: %f seconds" % t)
-			im.set_data(data_2d[:,:,j])
-			im.axes.figure.canvas.draw()
+		# quickly stream a series of images
+		if not stepthru :
+
+			#tstart = time.time()
+			for j in range(nplot) :
+				#t = j*stepsize*self.tsample
+				ax.set_title("Frame %i" % a[j])
+				#ax.set_title("Time elapsed: %f seconds" % t)
+				im.set_data(data_2d[:,:,j])
+				im.axes.figure.canvas.draw()
+
+		# step through series of images by keyboard input 'enter'
+		else : 
+
+			for j in range(nplot) :
+				input("press enter for next channel")
+				#t = j*stepsize*self.tsample
+				ax.set_title("Frame %i" % a[j])
+				#ax.set_title("Time elapsed: %f seconds" % t)
+				im.set_data(data_2d[:,:,j])
+				im.axes.figure.canvas.draw()
 
 	def pixelate_single(self, sample, arr = [], axis = 0):
 		''' Take 5184 channel x 25890 data point array and plot desired points in
@@ -567,13 +588,13 @@ class Sensor(object):
 			if not len(arr) :
 				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
-				im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+				im = axis.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
 			
 			# if array is input, plot this image instead.
 			else :
 				data_2d = np.reshape(arr, (self.row, -1))
-				im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
-			ax.grid(True)
+				im = axis.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+			axis.grid(True)
 
 		else :	
 			fig, ax = plt.subplots()
