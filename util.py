@@ -99,12 +99,19 @@ def	peaks_handle(nPk, left, right, l, k, M):
 def model_func(x, A, l, off) :
 	return ( A * np.exp( -l * (x) ) ) + off
 
-def save_object():
-	a= 'do it'
+def save_object(obj, outfile):
+	''' save an object (serialize it) with pickle library.
+	input:
+	-obj : instance of a python class.
+	-outfile: string name, including path, for .pkl file.
+	string must end in ".pkl"
+	'''
+	with open(outfile, 'wb') as output:
+		pickle.dump(obj, output)
 
-def read_object():
-	a='read it'
-
+def read_object(infile):
+	with open(infile, 'rb') as read:
+		return pickle.load(read)
 class Sensor(object):
 	
 	''' This class defines some basic features of sensor. Creates a
@@ -450,6 +457,7 @@ class Sensor(object):
 			fig.show()	 
 
 		# show the region of interest (possible event)
+		# use this to verify we are taking data from desired channels.
 		# a = np.zeros(5184)
 		# a[self.selection] = 1
 		# self.pixelate_single(sample = 0, arr=a)
@@ -646,16 +654,17 @@ class Sensor(object):
 		lr defaults to plotting the entire dataset. 
 		'''
 		if not lr :
-			lr = (0, self.daq_length-1)
+			lr = (0, self.daq_length)
 
-		x = np.arange(self.daq_length)
+		x = np.arange(lr[0], lr[1])
+		datalen = len(x)
 
 		# setup
 		fig = plt.figure()
 		ax = fig.add_subplot(111)
 		ax.set_title("multich plot")
 
-		ax.step(x, np.zeros(self.daq_length))
+		ax.step(x, np.zeros(datalen))
 
 		fig.show()
 		ax.figure.canvas.draw()
@@ -665,7 +674,7 @@ class Sensor(object):
 			
 			fig2 = plt.figure()
 			ax2 = fig2.add_subplot(111)
-			ax2.step(x, np.zeros(self.daq_length))
+			ax2.step(x, np.zeros(datalen))
 			fig2.show()
 			ax2.figure.canvas.draw()
 
@@ -674,7 +683,7 @@ class Sensor(object):
 				input("press enter for next channel")
 				ax.cla()
 				ax.set_title('raw data, channel no. %i' % i)
-				ax.step(x, self.pix[i].data)
+				ax.step(x, self.pix[i].data[lr[0], lr[1]])
 
 				if fit :
 					for j in range(self.pix[i].npk) :
@@ -683,7 +692,7 @@ class Sensor(object):
 							marker='o')
 				ax2.cla()
 				ax2.set_title('filtered data, channel no. %i' % i) 
-				ax2.step(x, self.pix[i].filt)
+				ax2.step(x, self.pix[i].filt[lr[0], lr[1]])
 				
 				ax.figure.canvas.draw()
 				ax2.figure.canvas.draw()
@@ -692,10 +701,9 @@ class Sensor(object):
 			print('plotting raw data')
 			for i in pixels :
 				input("press enter for next channel")
-				plt_ch = self.pix[i].data
 				ax.cla()
 				ax.set_title("channel no. %i" % i)
-				ax.step(x, plt_ch)
+				ax.step(x, self.pix[i].data[lr[0], lr[1]])
 				if fit :
 					for j in range(self.pix[i].npk) :
 						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
@@ -709,14 +717,13 @@ class Sensor(object):
 			print('plotting filtered data')
 			for i in pixels :
 				input("press enter for next channel")
-				plt_ch = self.pix[i].filt
 				ax.cla()
 				ax.set_title("channel no. %i" % i)
-				ax.step(x, plt_ch)
+				ax.step(x, self.pix[i].filt[lr[0], lr[1]])
 				ax.figure.canvas.draw()
 
 		else :
-			print('unknown input: choose "f" for filtered data, "d" for raw data, or "b" for both.')
+			print('unknown input: set "choose" = "f" for filtered data, "d" for raw data, or "b" for both.')
 
 	def pixelate_tri_val(self) :
 		''' provide 72X72 data array on channel status. 0 is a channel with no found peaks.
