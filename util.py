@@ -6,6 +6,10 @@ import time
 # for importing data from HDF5 files into Numpy arrays
 import h5py 
 
+import pickle
+# saving Sensor objects after doing all the analysis, so they can 
+# quickly be re-tested without redoing entire filtering procedure.
+
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
 # These functions can be slow when implemented in Python.
 
@@ -95,6 +99,11 @@ def	peaks_handle(nPk, left, right, l, k, M):
 def model_func(x, A, l, off) :
 	return ( A * np.exp( -l * (x) ) ) + off
 
+def save_object():
+	a= 'do it'
+
+def read_object():
+	a='read it'
 
 class Sensor(object):
 	
@@ -373,7 +382,7 @@ class Sensor(object):
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
 	
-	def selection_hist(self, x_0, y_0, radius, frames, select = [], nbins = 2000, axis = 0) :
+	def selection_hist(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
 
 		### make histograms for selection of pixels and frames.
 		### fit the histogram. Yuan used sum of two gaussian functions, let's
@@ -389,7 +398,8 @@ class Sensor(object):
 			input:
 			-x_0, y_0 : center point of a circle to define an event.
 			-radius : distance from center to define circle enclosing event.
-			-frames : python list oftime points / frames to use in calculation. 
+			-frames : python list oftime points / frames to use in calculation.
+			**note: even a single frame input must be input as a list e.g. [12] 
 			can choose single point, or multiple. frames do not necessarily need to be contiguous.
 			-select : use select to supply a list of desired pixels to plot instead of default circle.
 			-nbins : number of bins for voltage histogram.
@@ -400,11 +410,11 @@ class Sensor(object):
 			# do the circular selection.
 
 			# linear location in 5184 element array
-			rectangle = [((self.row)*i)+j for i in range(x_0-radius, x_0+radius) for j in range(y_0-radius, y_0+radius)]
+			self.rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
 			# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
-			xy = [(self.pix[i].loc, i) for i in rectangle]
+			self.xy = [(self.pix[i].loc, i) for i in self.rectangle]
 			# if the element is inside of the circle's radius, include it.
-			self.selection = [xy[i][1] for i in range(len(xy)) if np.sqrt((xy[i][0][0]-x_0)**2 + (xy[i][0][1]-y_0)**2) < radius]
+			self.selection = [self.xy[i][1] for i in range(len(self.xy)) if np.sqrt((self.xy[i][0][0]-x_0)**2 + (self.xy[i][0][1]-y_0)**2) < radius]
 			
 			# retrieve all voltage values for the selected pixels and frames.
 			values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
@@ -445,12 +455,15 @@ class Sensor(object):
 		# self.pixelate_single(sample = 0, arr=a)
 
 		# show the frame that with an event of interest.
-		fig, ax = plt.subplots(1,1)
-		self.pixelate_single(sample = frame, arr=[], axis = ax)
-
+		fig2, ax2 = plt.subplots(1,1)
+		if (len(frames) == 1) :
+			self.pixelate_single(sample = frames, arr=[], axis = ax2)
+		elif (len(frames) > 1) :
+			self.pixelate_single(sample = frames[0], arr=[], axis = ax2)
 		# add a circle to the event we are analyzing
-		circle = plt.Circle(x_0, y_0, radius, color = 'y', alpha=0.4)
-		ax.add_artist(circle)
+		circle = plt.Circle((x_0, y_0), radius, color = 'r', fill=False, linewidth = 1.5, alpha=alpha)
+		ax2.add_artist(circle)
+		fig2.show()
 
 	def signal_hist(self, nbins = 10000, begin = -0.03, end = 0.03, axis=0) :
 		''' generate a histogram with the range of signal values we are dealing with.
@@ -571,7 +584,7 @@ class Sensor(object):
 				im.set_data(data_2d[:,:,j])
 				im.axes.figure.canvas.draw()
 
-	def pixelate_single(self, sample, arr = [], axis = 0):
+	def pixelate_single(self, sample, arr = [], vmin=-0.001, vmax=0.007, axis = 0):
 		''' Take 5184 channel x 25890 data point array and plot desired points in
 		time as 5184 pixel array.
 		
@@ -588,12 +601,12 @@ class Sensor(object):
 			if not len(arr) :
 				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
-				im = axis.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+				im = axis.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			
 			# if array is input, plot this image instead.
 			else :
 				data_2d = np.reshape(arr, (self.row, -1))
-				im = axis.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+				im = axis.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			axis.grid(True)
 
 		else :	
@@ -603,16 +616,16 @@ class Sensor(object):
 			if not len(arr) :
 				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
-				im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+				im = ax.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			
 			# if array is input, plot this image instead.
 			else :
 				data_2d = np.reshape(arr, (self.row, -1))
-				im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
+				im = ax.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 		
-		fig.colorbar(im)
-		ax.grid(True)
-		fig.show()
+			fig.colorbar(im)
+			ax.grid(True)
+			fig.show()
 
 
 	def plot_waveform(self, pixels, choose, fit = False, lr = None) :
