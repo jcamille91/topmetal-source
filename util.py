@@ -9,6 +9,10 @@ import h5py
 import pickle
 # saving Sensor objects after doing all the analysis, so they can 
 # quickly be re-tested without redoing entire filtering procedure.
+#### sensor objects with data are large, but there is some issue with
+#### with using pickle for large objects. it is capable of serializingl large objects
+#### there's a bug associated with larger sizes however...
+
 
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
 # These functions can be slow when implemented in Python.
@@ -112,6 +116,7 @@ def save_object(obj, outfile):
 def read_object(infile):
 	with open(infile, 'rb') as read:
 		return pickle.load(read)
+
 class Sensor(object):
 	
 	''' This class defines some basic features of sensor. Creates a
@@ -134,6 +139,8 @@ class Sensor(object):
 	# that mess up 2d pixel images.
 	BAD = CHARGED + NOISY + DEMUXCH
 	BAD.sort()
+
+	ev1 = (18,28, 10, np.arange(13710,13850))
 
 	def __init__(self, infile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble.h5'):
 		''' 
@@ -222,30 +229,54 @@ class Sensor(object):
 		lib.demux(c_char_p(self.infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 
-	def load_pixels(self, npt = 25890):
+	def load_pixels(self, npt = 25890, cut=[]):
 		
 		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
 		and calculate each pixel's average and root mean square voltage. 
 		npt defaults to length of daq event (25890 for current dataset) 
 		for zero input or a value exceeding dataset length.
+		input:
+		-npt :  number of points starting from beginning of dataset to calculate
+		the average voltage and RMS value. defaults to length of dataset.
+		-cut : a list with two elements: beginning and endpoint of desired data.
+		defaults to empty list, which uses the entire dataset.
 		'''
 
 		with h5py.File(self.infile,'r') as hf: # open file for read, then close
 			d = hf.get(self.daq_event)
 			data = np.array(d, dtype=np.float64)
-
-		self.daq_length = len(data[0])
-
-
-		# iterate over a list of 'Pixel' objects, supply data, avg, and rms.
-		if ((npt == False) or (npt >= self.daq_length)) :
-			print('set avg/rms calculation length to raw data array length =', self.daq_length)
-			self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
+		self.cut = cut
 		
-		else :
-			print('set avg/rms calculation length to =', npt, '.')
-			print('data array length is ', self.daq_length)
-			self.pix = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
+		if not cut: # do all of the data
+
+			self.daq_length = len(data[0])
+
+
+			# iterate over a list of 'Pixel' objects, supply data, avg, and rms.
+			if ((npt == False) or (npt >= self.daq_length)) :
+				print('set avg/rms calculation length to raw data array length =', self.daq_length)
+				self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
+			
+			else :
+				print('set avg/rms calculation length to =', npt, '.')
+				print('data array length is ', self.daq_length)
+				self.pix = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
+		
+		else : # do a portion of the dataset.
+
+			self.daq_length = cut[1]-cut[0]
+
+
+			# iterate over a list of 'Pixel' objects, supply data, avg, and rms.
+			if ((npt == False) or (npt >= self.daq_length)) :
+				print('set avg/rms calculation length to raw data array length =', self.daq_length)
+				self.pix = [Pixel(i, data[i][cut[0]:cut[1]], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
+			
+			else :
+				print('set avg/rms calculation length to =', npt, '.')
+				print('data array length is ', self.daq_length)
+				self.pix = [Pixel(i, data[i][cut[0]:cut[1]], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
+
 
 		### do we want to set average and rms values to 0 for the dead channels or not?
 		### depends on how we will do sensor noise calculation later.
@@ -389,7 +420,27 @@ class Sensor(object):
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
 	
-	def selection_hist(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
+	def vsum(self, nbins = 2000, alpha = 1, axis = 0):
+
+
+		values = []
+		for q in Event:
+			x_0 = Event[q].x_0
+			y_0 = Event[q].y_0
+			radius = Event[q].radius
+			nframe = Event[q].nframe
+
+			rect = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
+			# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
+			xy = [(self.pix[i].loc, i) for i in rect]
+			# if the element is inside of the circle's radius, include it.
+			circ = [self.xy[i][1] for i in range(len(self.xy)) if np.sqrt((self.xy[i][0][0]-x_0)**2 + (self.xy[i][0][1]-y_0)**2) < radius]
+			
+			for k in range(nframe) :
+				sum = np.sum(np.array([self.pix[i].filt[j] for i in circ for j in frames]))
+				values.append(sum)
+
+	def selection(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
 
 		### make histograms for selection of pixels and frames.
 		### fit the histogram. Yuan used sum of two gaussian functions, let's
@@ -585,7 +636,7 @@ class Sensor(object):
 		else : 
 
 			for j in range(nplot) :
-				input("press enter for next channel")
+				input("press enter for next frame")
 				#t = j*stepsize*self.tsample
 				ax.set_title("Frame %i" % a[j])
 				#ax.set_title("Time elapsed: %f seconds" % t)
@@ -636,7 +687,7 @@ class Sensor(object):
 			fig.show()
 
 
-	def plot_waveform(self, pixels, choose, fit = False, lr = None) :
+	def plot_waveform(self, pixels, choose, avg=True, fit = False, lr = None) :
 		'''
 		This function can plot a series of channels. When the user
 		presses 'Enter', the next channel's plot is replaces the prior.
@@ -647,6 +698,7 @@ class Sensor(object):
 		-pixels : 1D np.array/list containing Pixel indices to plot. 
 		-choose : 'd' plots raw data, 'f' plots filtered data.
 			'b' plots the raw data and filtered data.
+		-avg : impose a line of the average voltage onto the raw data plot.
 		-fit : fit == 'True' superimposes scatter plot of fits 
 			for a channel's peaks onto the same axis plotting the raw data.
 		-lr : input a tuple to slice the plot. for example, if the dataset has
@@ -682,8 +734,13 @@ class Sensor(object):
 			for i in pixels :
 				input("press enter for next channel")
 				ax.cla()
-				ax.set_title('raw data, channel no. %i' % i)
-				ax.step(x, self.pix[i].data[lr[0], lr[1]])
+				ax.set_title('raw data, channel no. %i : (%i, %i)' 
+					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
+
+				ax.step(x, self.pix[i].data[lr[0]:lr[1]])
+				if avg :
+					ax.step(x, np.ones(datalen)*self.pix[i].avg)
+
 
 				if fit :
 					for j in range(self.pix[i].npk) :
@@ -691,9 +748,11 @@ class Sensor(object):
 							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
 							marker='o')
 				ax2.cla()
-				ax2.set_title('filtered data, channel no. %i' % i) 
-				ax2.step(x, self.pix[i].filt[lr[0], lr[1]])
+				ax.set_title('filtered data, channel no. %i : (%i, %i)' 
+					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
+				ax2.step(x, self.pix[i].filt[lr[0]:lr[1]])
 				
+
 				ax.figure.canvas.draw()
 				ax2.figure.canvas.draw()
 
@@ -702,8 +761,12 @@ class Sensor(object):
 			for i in pixels :
 				input("press enter for next channel")
 				ax.cla()
-				ax.set_title("channel no. %i" % i)
-				ax.step(x, self.pix[i].data[lr[0], lr[1]])
+				ax.set_title('raw data, channel no. %i : (%i, %i)' 
+					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
+				ax.step(x, self.pix[i].data[lr[0]:lr[1]])
+				if avg :
+					ax.step(x, np.ones(datalen)*self.pix[i].avg)
+
 				if fit :
 					for j in range(self.pix[i].npk) :
 						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
@@ -718,8 +781,9 @@ class Sensor(object):
 			for i in pixels :
 				input("press enter for next channel")
 				ax.cla()
-				ax.set_title("channel no. %i" % i)
-				ax.step(x, self.pix[i].filt[lr[0], lr[1]])
+				ax.set_title('raw data, channel no. %i : (%i, %i)' 
+					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
+				ax.step(x, self.pix[i].filt[lr[0]:lr[1]])
 				ax.figure.canvas.draw()
 
 		else :
