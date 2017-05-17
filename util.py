@@ -123,7 +123,8 @@ class Sensor(object):
 	list of 'Pixel' objects, which each contain a list of 'Peak' objects.
 	'''
 
-	# channels with possibly charge trapped.
+	# channels with charge possibly trapped. 
+	# Slowly rising baselines with magnitude much larger than signal we want to measure.
 	CHARGED  = [268,269,340,718,719,805,806,1047,1048,1617,1618,2037,2038,
     2188,2189,2260,2396,2397, 2539, 2540, 2768, 2769, 4868]
 	
@@ -139,8 +140,6 @@ class Sensor(object):
 	# that mess up 2d pixel images.
 	BAD = CHARGED + NOISY + DEMUXCH
 	BAD.sort()
-
-	ev1 = (18,28, 10, np.arange(13710,13850))
 
 	def __init__(self, infile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble.h5'):
 		''' 
@@ -186,7 +185,7 @@ class Sensor(object):
 		the pixel array is time multiplexed, so each frame 
 		(4 time samples for each of the 5184 pixels) is sequential in memory.
 		To get this data in time-order (an array of 5184 channels x total number of samples),
-		we need to find the beginning of data acquisition 'mStart' and input parameters
+		we need to find the first frame of data acquisition 'mStart' and input parameters
 		for the data acquisition.
 
 		input:
@@ -212,8 +211,8 @@ class Sensor(object):
 		example: mChOff = 1, mChLen = 4, mChSpl = 2. the first sample is skipped, the 2nd and 3rd are averaged,
 		and the fourth is ignored.
 		'''
-		# DAQ parameters for this particular dataset.
 
+		# DAQ parameters for this particular dataset.
 		rawinfile = '../data_TM1x1/out22.h5'
 		outdmuxfile = '../data_TM1x1/demuxdouble.h5'
 		pixel = 2093
@@ -224,6 +223,7 @@ class Sensor(object):
 		mChSpl = 2
 		frameSize = (72**2)*4
 
+		# call the C function with ctypes
 		lib = CDLL("demux.so")
 		lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
 		lib.demux(c_char_p(self.infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
@@ -240,6 +240,9 @@ class Sensor(object):
 		the average voltage and RMS value. defaults to length of dataset.
 		-cut : a list with two elements: beginning and endpoint of desired data.
 		defaults to empty list, which uses the entire dataset.
+		*** nothing has been done to make 'cut' work with the analysis chain yet.
+		if may not be practical because the savitsky-golay filter and trapezoidal filter will
+		give different results if used on the whole dataset versus only a chunk of it.
 		'''
 
 		with h5py.File(self.infile,'r') as hf: # open file for read, then close
@@ -285,6 +288,21 @@ class Sensor(object):
 
 		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
 		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
+
+	def label_events(self):
+
+		# just a quick and dirty function to manually input events of
+		# interest for future reference 
+		# all taken from out22.h5
+
+		# the length of an event should be l+k, determined by the trapezoidal
+		# filter parameters.
+		ev1 = Event(18, 28, 10, [13710, 13710+Pixel.l+Pixel.k])
+		ev2 = Event(27, 16, 10, [9100, 9100+Pixel.l+Pixel.k])
+		ev3 = Event(18, 28, 11, [9550, 9550+Pixel.l+Pixel.k])
+		ev4 = Event(18, 28, 10, [9960, 9960+Pixel.l+Pixel.k])
+		self.alpha_events = [ev1,ev2,ev3,ev4]
+
 
 	def input_fakedata(self):
 		'''
@@ -376,7 +394,7 @@ class Sensor(object):
 		 (it won't yield a trapezoidal response) 
 
 		'''
-		# these 'Pixel' class attributes are used by methods for analysis.
+		# these 'Pixel' class attributes are used by Pixel methods for analysis.
 		Pixel.daq_length = self.daq_length 
 		Pixel.noisethresh = 0.002
 
@@ -420,26 +438,104 @@ class Sensor(object):
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
 	
-	def vsum(self, nbins = 2000, alpha = 1, axis = 0):
+	def vsum_hist(self, show = True, nbins = 2000, alpha = 1, axis = 0):
 
+		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
+		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
+		if we add all the consituent voltages of an event, we should get a measure of the alpha particle's energy
+		spectrum (a "sharp" peak).
 
-		values = []
-		for q in Event:
-			x_0 = Event[q].x_0
-			y_0 = Event[q].y_0
-			radius = Event[q].radius
-			nframe = Event[q].nframe
+		This function makes takes selections of pixels within circles
+		to define events. then, over all frames constituting an event, voltage is summed.
+		
+		input:
+		-show : if True, step through a pixel image of each event with a circle enclosing the region of interest.
+		'''
 
-			rect = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
-			# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
-			xy = [(self.pix[i].loc, i) for i in rect]
-			# if the element is inside of the circle's radius, include it.
-			circ = [self.xy[i][1] for i in range(len(self.xy)) if np.sqrt((self.xy[i][0][0]-x_0)**2 + (self.xy[i][0][1]-y_0)**2) < radius]
+		### check that this returns expected results for 1/2 events
+		### can compare with previous selection function
+		nevent = len(self.alpha_events)
+		self.midpoint = np.zeros(nevent)
+		ring = [] # contains info for each as a tuple so we can easily print later.
+		self.alphaE = np.zeros(nevent)
+
+		# get location for every event. get selection of pixels based on this location for 
+		# each event. store the voltage summation for histogram.
+		for q in range(nevent) :
 			
-			for k in range(nframe) :
-				sum = np.sum(np.array([self.pix[i].filt[j] for i in circ for j in frames]))
-				values.append(sum)
+			x = self.alpha_events[q].x
+			y = self.alpha_events[q].y
+			r = self.alpha_events[q].radius
+			frames = self.alpha_events[q].frames
+			
+			self.midpoint[q] = frames[0] + (frames[1]-frames[0])/2
+			ring.append((self.midpoint[q], x, y, r))
 
+			circle = self.select_pixels(x, y, r)
+
+			vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
+			valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
+			self.alphaE[q] = vsum
+
+
+		if isinstance(axis, ax_obj) : # axis supplied
+			axis.hist(valcheck, nbins)
+			axis.set_xlabel('Volts RMS')
+			axis.set_ylabel('# of channels (5181 total)')
+			axis.set_title('Sensor Noise')
+			#axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+
+		else : 			# no axis supplied, make standalone plot.
+			fig = plt.figure(1)
+			axis = fig.add_subplot(111)
+			axis.hist(valcheck, nbins)
+			axis.set_xlabel('Volts')
+			axis.set_ylabel('# of datapoints')
+			axis.set_title('filtered signal values')
+			#axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+			fig.show()	 
+
+		# show the region of interest (possible event)
+		# use this to verify we are taking data from desired channels.
+		# a = np.zeros(5184)
+		# a[self.selection] = 1
+		# self.pixelate_single(sample = 0, arr=a)
+
+		# show the the middle most frame of events of interest.
+		if show :
+
+			fig2, ax2 = plt.subplots(1,1)
+			for p in range(nevent):
+				input("press enter to show next event:")	
+				ax2.cla()
+				ax2.set_title('frame no. %i coordinate: (%i, %i) radius: %i' % ring[p])
+				self.pixelate_single(sample = int(self.midpoint[p]), arr=[], axis = ax2)
+				# add a circle 'artist' to the event we are analyzing
+				circ = plt.Circle((ring[p][1], ring[p][2]), ring[p][3], color = 'r', fill=False, linewidth = 1.5, alpha=alpha)
+				ax2.add_artist(circ)
+				fig2.show()
+
+	def select_pixels(self, x_0, y_0, radius) :
+		# just do the selection, no histogram
+
+		# do the circular selection.
+
+		# linear location in 5184 element array of a 'radius' sized rectangle
+		rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
+		# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
+		xy = [(self.pix[i].loc, i) for i in rectangle]
+		# if the element is inside of the circle's radius, include it. We're cutting a circle out of a rectangle
+		selection = [xy[i][1] for i in range(len(xy)) if np.sqrt((xy[i][0][0]-x_0)**2 + (xy[i][0][1]-y_0)**2) < radius]
+		
+		return selection
+
+		# retrieve all voltage values for the selected pixels and frames.
+		# values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
+	
 	def selection(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
 
 		### make histograms for selection of pixels and frames.
@@ -649,11 +745,14 @@ class Sensor(object):
 		
 		input:
 		-sample : desired point in sample space to plot 0-25889
+		-arr : input array of length (self.row)**2 to plot.
+		can use this for quick tests.
+		-vmin , vmax : minimum and maximum values for the colormap.
+		-axis: supply an axis to impose this pixel plot to that axis.
+		if no axis is supplied (default), then the function generates a standalone image.
+
 		'''
 
-
-		# dark = min(data)
-		# bright = max(data)
 		if isinstance(axis, ax_obj) :
 
 			# default case, plot data by specifying sample in dataset.
@@ -671,7 +770,7 @@ class Sensor(object):
 		else :	
 			fig, ax = plt.subplots()
 
-						# default case, plot data by specifying sample in dataset.
+			# default case, plot data by specifying sample in dataset.
 			if not len(arr) :
 				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
@@ -748,7 +847,7 @@ class Sensor(object):
 							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
 							marker='o')
 				ax2.cla()
-				ax.set_title('filtered data, channel no. %i : (%i, %i)' 
+				ax2.set_title('filtered data, channel no. %i : (%i, %i)' 
 					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
 				ax2.step(x, self.pix[i].filt[lr[0]:lr[1]])
 				
@@ -898,7 +997,7 @@ class Pixel(object):
 		 avoid transition on peaks' rise time, which won't account for in our fit model.
 		-npk : total number of peaks
 		-type : descriptor for pixel. some pixels are okay, others are noisy,
-		3 are for demux and some are clearly not functioning correctly
+		3 are for demux and some show weird basleine behavior, may be do to alpha particle impacts, or just bad pixels.
 		'''
 
 		self.number = number
@@ -1206,9 +1305,11 @@ class Peak(object):
 
 class Event(object):
 
-	def __init__(self):
-		self.radius = 20
-
+	def __init__(self, x, y, radius, frames):
+		self.radius = radius
+		self.x = x
+		self.y = y
+		self.frames = frames
 
 def get_wfm_one(infile, ch, npt, plt) :
 
