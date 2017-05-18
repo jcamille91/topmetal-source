@@ -300,35 +300,46 @@ class Sensor(object):
 		self.trap_length = Pixel.l + Pixel.k
 
 		# circle shaped events; use select_circle(x, y, radius, index)
+		self.alpha_events = [
+		Event(10, 29, 10, 3520), #
+		Event(15, 9, 9, 6510), #
+		Event(45, 31, 10, 6580), #
+		Event(11, 30, 10, 6845), #
+		Event(18, 45, 15, 7020), #
+		Event(25, 46, 13, 7505), #
+		Event(18, 45, 15, 7020), #
+		Event(23, 10, 10, 7865), #
+		Event(19, 10, 10, 8510), #
+		Event(43, 29, 12, 8910), #
+		Event(28, 16, 11, 9095), #
+		Event(18, 28, 13, 9545), # this one moves a little bit but is focused well
+		Event(36, 29, 12, 10610), #
+		Event(32, 10, 10, 10910), #
+		Event(39, 14, 12, 11030), # lopsided but focused, rectangle is better here
+		Event(42, 17, 12, 12460), #
+		Event(22, 48, 12, 12850), #
+		Event(9, 28, 9, 13060), #
+		Event(42, 17, 12, 12460), #
+		Event(18, 28, 10, 13700), #
+		Event(20, 9, 9, 14425), # elliptical and focused
+		Event(28, 9, 9, 15140), #
+		Event(18, 23, 9, 15475), #
+		Event(40, 42, 14, 16825), # lots of dark pixels here
+		Event(12, 7, 7, 17600), # elliptical and a little broken up
+		Event(40, 14, 10, 18345), # nice circle
+		Event(42, 30, 10, 18755), # nice circle but not isolated
+		Event(41, 32, 9, 20370), # moves a bit and is a little bit separated
+		Event(40, 30, 11, 20550), # fat elliptical circle
+		Event(24, 42, 11, 21140), # circle, lots of darker pixels
+		Event(24, 42, 11, 21375), # pretty similar in location/consistency to previous event
+		Event(40, 52, 10, 21830), # small ellipse
+		Event(20, 11, 10, 22270), # starts circular becomes elliptical
+		Event(40, 35, 10, 22675), # big messy circle
+		Event(12, 8, 8, 23060), # elliptical blip
+
+		]
 		
-		ev = Event(10, 29, 10, 3520) #
-		ev = Event(15, 9, 9, 6510) #
-		ev = Event(45, 31, 10, 6580) #
-		ev = Event(11, 30, 10, 6845) #
-		ev = Event(18, 45, 15, 7020) #
-		ev = Event(25, 46, 13, 7505) #
-		ev = Event(18, 45, 15, 7020) #
-		ev = Event(23, 10, 10, 7865) #
-		ev = Event(19, 10, 10, 8510) #
-		ev = Event(43, 29, 12, 8910) #
-		ev = Event(28, 16, 11, 9095) #
-		ev = Event(18, 28, 13, 9545) # this one moves a little bit but is focused well
-		ev = Event(36, 29, 12, 10610) #
-		ev = Event(32, 10, 10, 10910) #
-		ev = Event(39, 14, 12, 11030) # lopsided but focused, rectangle is better here
-		ev = Event(42, 17, 12, 12460) #
-		ev = Event(22, 48, 12, 12850) #
-		ev = Event(9, 28, 9, 13060) #
-		ev = Event(42, 17, 12, 12460) #
-		ev = Event(18, 28, 10, 13700) #
-		ev = Event(20, 9, 9, 14425) # elliptical and focused
-		ev = Event(28, 9, 9, 15140) #
-		ev = Event(18, 23, 9, 15475) #
-		ev = Event(40, 42, 14, 16825) # lots of negative values here
-		ev = Event(12, 7, 7, 17600) # elliptical and a little broken up
-		ev = Event(40, 14, 10, 18345) # nice circle
-		ev = Event(42, 30, 10, 18755) # nice circle but not isolated
-		ev = Event(41, 32, 9, 20370) # moves a bit and is a little bit separated
+
 
 
 
@@ -343,7 +354,7 @@ class Sensor(object):
 		ev = Event(50, 31, 14, 16440) # this one definitely moves...
 		ev = Event(24, 43, 14, 16590) # big elliptical, focused
 		ev = Event(22, 38, 9, 19180) # big elliptical
-
+		ev = Event(1,1,1, 21520) # pretty messy, hard to discren a shape, but definitely an event
 		# moving
 
 		ev = Event(27, 36, 8, 1800) #
