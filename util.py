@@ -9,9 +9,9 @@ import h5py
 import pickle
 # saving Sensor objects after doing all the analysis, so they can 
 # quickly be re-tested without redoing entire filtering procedure.
-#### sensor objects with data are large, but there is some issue with
-#### with using pickle for large objects. it is capable of serializingl large objects
-#### there's a bug associated with larger sizes however...
+#### sensor objects with data are large, and there is some issue
+####  using pickle for large objects. it is capable of serializingl large objects
+#### there's still a bug associated with larger sizes however...
 
 
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
@@ -30,7 +30,7 @@ import numpy.ctypeslib as npct
 
 # plotting tools. so far, sticking to matplotlib.
 import matplotlib
-matplotlib.use('TkAgg') # matplotlib backend for plotting interactively. 
+#matplotlib.use('TkAgg') # matplotlib backend for plotting interactively. 
 						# configure this before importing pylab/pyplot.
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
@@ -295,13 +295,59 @@ class Sensor(object):
 		# interest for future reference 
 		# all taken from out22.h5
 
-		# the length of an event should be l+k, determined by the trapezoidal
+		# the length of an event should be ~ l+k, determined by the trapezoidal
 		# filter parameters.
-		ev1 = Event(18, 28, 10, [13710, 13710+Pixel.l+Pixel.k])
-		ev2 = Event(27, 16, 10, [9100, 9100+Pixel.l+Pixel.k])
-		ev3 = Event(18, 28, 11, [9550, 9550+Pixel.l+Pixel.k])
-		ev4 = Event(18, 28, 10, [9960, 9960+Pixel.l+Pixel.k])
-		self.alpha_events = [ev1,ev2,ev3,ev4]
+		self.trap_length = Pixel.l + Pixel.k
+
+		# circle shaped events; use select_circle(x, y, radius, index)
+		
+		ev = Event(10, 29, 10, 3520) #
+		ev = Event(15, 9, 9, 6510) #
+		ev = Event(45, 31, 10, 6580) #
+		ev = Event(11, 30, 10, 6845) #
+		ev = Event(18, 45, 15, 7020) #
+		ev = Event(25, 46, 13, 7505) #
+		ev = Event(18, 45, 15, 7020) #
+		ev = Event(23, 10, 10, 7865) #
+		ev = Event(19, 10, 10, 8510) #
+		ev = Event(43, 29, 12, 8910) #
+		ev = Event(28, 16, 11, 9095) #
+		ev = Event(18, 28, 13, 9545) # this one moves a little bit but is focused well
+		ev = Event(36, 29, 12, 10610) #
+		ev = Event(32, 10, 10, 10910) #
+		ev = Event(39, 14, 12, 11030) # lopsided but focused, rectangle is better here
+		ev = Event(42, 17, 12, 12460) #
+		ev = Event(22, 48, 12, 12850) #
+		ev = Event(9, 28, 9, 13060) #
+		ev = Event(42, 17, 12, 12460) #
+		ev = Event(18, 28, 10, 13700) #
+		ev = Event(20, 9, 9, 14425) # elliptical and focused
+		ev = Event(28, 9, 9, 15140) #
+		ev = Event(18, 23, 9, 15475) #
+		ev = Event(40, 42, 14, 16825) # lots of negative values here
+		ev = Event(12, 7, 7, 17600) # elliptical and a little broken up
+		ev = Event(40, 14, 10, 18345) # nice circle
+		ev = Event(42, 30, 10, 18755) # nice circle but not isolated
+		ev = Event(41, 32, 9, 20370) # moves a bit and is a little bit separated
+
+
+
+
+
+
+
+		# 'blobs' 
+		ev = Event(45, 15, 15, 2135) #
+		ev = Event(38, 46, 16, 3020) #
+		self.select_rectangle([17,37] , [19,60]) #
+		ev = Event(50, 31, 14, 16440) # this one definitely moves...
+		ev = Event(24, 43, 14, 16590) # big elliptical, focused
+		ev = Event(22, 38, 9, 19180) # big elliptical
+
+		# moving
+
+		ev = Event(27, 36, 8, 1800) #
+		self.alpha_events = [ev1, ev2, ev3, ev4]
 
 
 	def input_fakedata(self):
@@ -471,7 +517,7 @@ class Sensor(object):
 			self.midpoint[q] = frames[0] + (frames[1]-frames[0])/2
 			ring.append((self.midpoint[q], x, y, r))
 
-			circle = self.select_pixels(x, y, r)
+			circle = self.select_circle(x, y, r)
 
 			vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
 			valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
@@ -519,23 +565,32 @@ class Sensor(object):
 				ax2.add_artist(circ)
 				fig2.show()
 
-	def select_pixels(self, x_0, y_0, radius) :
-		# just do the selection, no histogram
+	def select_circle(self, x, y, r) :
 
-		# do the circular selection.
-
+		# circular selection.
+		rect = [((i, j), i+j*self.row) for j in range(y-r, y+r) for i in range(x-r,x+r)]
 		# linear location in 5184 element array of a 'radius' sized rectangle
-		rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
+		#rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
 		# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
-		xy = [(self.pix[i].loc, i) for i in rectangle]
+		#xy = [(self.pix[i].loc, i) for i in rectangle]
 		# if the element is inside of the circle's radius, include it. We're cutting a circle out of a rectangle
-		selection = [xy[i][1] for i in range(len(xy)) if np.sqrt((xy[i][0][0]-x_0)**2 + (xy[i][0][1]-y_0)**2) < radius]
+		selection = [rect[i][1] for i in range(len(rect)) if np.sqrt((rect[i][0][0]-x)**2 + (rect[i][0][1]-y)**2) < r]
 		
 		return selection
 
 		# retrieve all voltage values for the selected pixels and frames.
 		# values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
-	
+	def select_rectangle(self, lr, tb) :
+
+		'''make a rectangular selection of pixels.
+		input:
+		-lr : the left and right most points as a two element list.
+		-tb : the top and bottom most points as a two element list.
+
+		'''
+
+		return [i+j*self.row for j in range(tb[0], tb[1]) for i in range(lr[0], lr[1])]
+
 	def selection(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
 
 		### make histograms for selection of pixels and frames.
@@ -738,6 +793,8 @@ class Sensor(object):
 				#ax.set_title("Time elapsed: %f seconds" % t)
 				im.set_data(data_2d[:,:,j])
 				im.axes.figure.canvas.draw()
+		# close the figure
+		plt.close(fig)
 
 	def pixelate_single(self, sample, arr = [], vmin=-0.001, vmax=0.007, axis = 0):
 		''' Take 5184 channel x 25890 data point array and plot desired points in
@@ -1305,11 +1362,11 @@ class Peak(object):
 
 class Event(object):
 
-	def __init__(self, x, y, radius, frames):
+	def __init__(self, x, y, radius, index):
 		self.radius = radius
 		self.x = x
 		self.y = y
-		self.frames = frames
+		self.index = index
 
 def get_wfm_one(infile, ch, npt, plt) :
 
