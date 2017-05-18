@@ -437,6 +437,7 @@ class Sensor(object):
 		# circle shaped events; use select_circle(x, y, radius, index)
 		self.alpha_events = [
 		Event(10, 29, 10, 3520), #
+		# 4800, next 320, 470, 500, 900
 		Event(15, 9, 9, 6510), #
 		Event(45, 31, 10, 6580), #
 		Event(11, 30, 10, 6845), #
@@ -447,7 +448,7 @@ class Sensor(object):
 		Event(19, 10, 10, 8510), #
 		Event(43, 29, 12, 8910), #
 		Event(28, 16, 11, 9095), #
-		Event(18, 28, 13, 9545), # this one moves a little bit but is focused well
+		#CHECKME Event(18, 28, 13, 9545), # this one moves a little bit but is focused well
 		Event(36, 29, 12, 10610), #
 		Event(32, 10, 10, 10910), #
 		Event(39, 14, 12, 11030), # lopsided but focused, rectangle is better here
@@ -460,13 +461,13 @@ class Sensor(object):
 		Event(28, 9, 9, 15140), #
 		Event(18, 23, 9, 15475), #
 		Event(40, 42, 14, 16825), # lots of dark pixels here
-		Event(12, 7, 7, 17600), # elliptical and a little broken up
+		#CHECKME Event(12, 7, 7, 17600), # elliptical and a little broken up
 		Event(40, 14, 10, 18345), # nice circle
 		Event(42, 30, 10, 18755), # nice circle but not isolated
 		Event(41, 32, 9, 20370), # moves a bit and is a little bit separated
 		Event(40, 30, 11, 20550), # fat elliptical circle
-		Event(24, 42, 11, 21140), # circle, lots of darker pixels
-		Event(24, 42, 11, 21375), # pretty similar in location/consistency to previous event
+		#CHECK ME Event(24, 42, 11, 21140), # circle, lots of darker pixels
+		# CHECK ME Event(24, 42, 11, 21375), # pretty similar in location/consistency to previous event
 		Event(40, 52, 10, 21830), # small ellipse
 		Event(20, 11, 10, 22270), # starts circular becomes elliptical
 		Event(40, 35, 10, 22675), # big messy circle
@@ -475,7 +476,7 @@ class Sensor(object):
 		Event(16, 7, 7, 23400), #
 		Event(40, 12, 10, 23545), # circle, but not totally isolated from other signal
 		Event(31, 13, 12, 23705), #
-		Event(26, 6, 6, 23775), # very small circle, not isolated
+		#CHECK ME Event(26, 6, 6, 23775), # very small circle, not isolated
 		Event(25, 54, 13, 23890), # kind of scattered, not a closed circle
 		Event(12, 30, 12, 24175), # scattered circle, in happens very close in time to two other events
 		Event(13, 29, 12, 24940), # big elliptical blob, focused
@@ -505,7 +506,7 @@ class Sensor(object):
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
 	
-	def vsum_hist(self, show = True, nbins = 2000, alpha = 1, axis = 0):
+	def vsum_hist(self, show = True, nbins=20, axis = 0):
 
 		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
 		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
@@ -519,10 +520,6 @@ class Sensor(object):
 		-show : if True, step through a pixel image of each event with a circle enclosing the region of interest.
 		'''
 
-		### check that this returns expected results for 1/2 events
-		### can compare with previous selection function
-		nevent = len(self.alpha_events)
-		self.midpoint = np.zeros(nevent)
 		ring = [] # contains info for each as a tuple so we can easily print later.
 		self.alphaE = [] # contains voltage summation for a single event.
 
@@ -530,19 +527,19 @@ class Sensor(object):
 		# each event. store the voltage summation for histogram.
 		for ev in self.alpha_events :
 			
-			ring.append((ev.index+self.trap_length/2, ev.x, ev.y, ev.r))
 
-			circle = self.select_circle(ev.x, ev.y, ev.r)
+			circle = self.select_circle(ev.x, ev.y, ev.radius)
 			# we'll use generator-expressions over list comprehensions here since we
 			# don't need to store all the constituent values to be summed.
 			vsum = sum(self.pix[i].filt[j] for i in circle for j in range(ev.index, ev.index+self.trap_length)) 
 			#vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
 			#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
 			self.alphaE.append(vsum)
+			ring.append((ev.index+self.trap_length/2, ev.x, ev.y, ev.radius, vsum))
 
 
 		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(valcheck, nbins)
+			axis.hist(self.alphaE, nbins)
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -553,7 +550,7 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 			fig = plt.figure(1)
 			axis = fig.add_subplot(111)
-			axis.hist(valcheck, nbins)
+			axis.hist(self.alphaE, nbins)
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -572,14 +569,15 @@ class Sensor(object):
 		if show :
 
 			fig2, ax2 = plt.subplots(1,1)
+
 			# p is a tuple (midpoint, x, y, r)
 			for p in ring:
 				input("press enter to show next event:")	
 				ax2.cla()
-				ax2.set_title('frame no. %i coordinate: (%i, %i) radius: %i' % p)
-				self.pixelate_single(sample = int(self.midpoint[p]), arr=[], axis = ax2)
+				ax2.set_title('frame no. %i coordinate: (%i, %i) radius: %i | voltage sum = %f volts' % p)
+				self.pixelate_single(sample = int(p[0]), arr=[], axis = ax2)
 				# add a circle 'artist' to the event we are analyzing
-				circ = plt.Circle((ring[p][1], ring[p][2]), ring[p][3], color = 'r', fill=False, linewidth = 1.5, alpha=alpha)
+				circ = plt.Circle((p[1], p[2]), p[3], color = 'r', fill=False, linewidth = 1.5, alpha=1)
 				ax2.add_artist(circ)
 				fig2.show()
 
@@ -608,6 +606,12 @@ class Sensor(object):
 		'''
 
 		return [i+j*self.row for j in range(tb[0], tb[1]) for i in range(lr[0], lr[1])]
+
+	def select_test(self, rect=[],circle=[], ellipse=[], arr=[])
+
+	if not rect or circle or ellipse or arr:
+		print('supply list of arguments for one of the four selection types:')
+		print('rect=[], circle=[], ellipse=[], or a list of custom values "arr".')
 
 	def selection(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
 
