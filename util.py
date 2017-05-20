@@ -296,7 +296,36 @@ class Sensor(object):
 		if using data without noise, be sure to change the RMS input to
 		the fitting procedure.
 		'''
-		b = 'o'
+		# create list to store data. normally 5184 channels are placed in this list,
+		# but one or just several are fine for experimenting with fake data.
+		self.pix = []
+
+		# define number of points for dataset.
+		# make sure there are enough points to accomodate 
+		# whatever features are defined below.
+		self.daq_length = 10000
+
+		# specify M=tau, peak location, amplitude, and the number of points to define
+		# the peak.
+		M_i = np.array([30, 20, 40], dtype=np.float64)
+		M_loc = np.array([1000, 5000, 8000])
+		M_a = np.array([0.02, 0.015, 0.011])
+		npk = len(M_i)
+		M_npt = res
+		baseline = 0.8
+
+
+		if mV_noise == 0 :
+			noise = 0
+		else :
+			noise = np.random.normal(loc = 0, scale = mV_noise*.001, size=data_len)
+
+		# build an array with exponentially decaying pulses just defined above.
+		exp = np.ones(data_len, dtype=np.float64)*baseline
+		for i in range(npk) :
+			exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
+		exp += noise
+
 
 
 	def noise_hist(self, nbins=2000, end=0.003, axis=0):
@@ -338,7 +367,7 @@ class Sensor(object):
 
 
 
-	def analyze(self, simple = False, select = [], noisethresh = 0.002,
+	def analyze(self, simple = False, select = [], fake = [], noisethresh = 0.002,
 				minsep = 50, threshold = 0.006,  	   			   # peak det
 			    fit_length = 300, fudge = 20,   	   			   # lsq fit
 			    l = 150, k = 20, M_def = 40, shaper_offset = 20): # shaper
@@ -380,7 +409,8 @@ class Sensor(object):
 		 (it won't yield a trapezoidal response) 
 
 		'''
-		# these 'Pixel' class attributes are used by Pixel methods for analysis.
+		# these 'Pixel' class attributes are used by methods for analysis.
+		# main three 'Pixel' methods are : peak_det(), fit_pulses(), filter_peaks().
 		Pixel.daq_length = self.daq_length 
 		Pixel.noisethresh = 0.002
 
@@ -394,8 +424,16 @@ class Sensor(object):
 		Pixel.k = k
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset
-
 		
+
+		# do analysis on some fake data generated in software. the list 'fake' should
+		#  only be defined if Sensor.input_fakedata() was executed.
+		if fake : 
+			for i in self.pix:
+				i.peak_det()
+				i.fit_pulses()
+				i.filter_peaks()
+
 		if simple : # do simple analysis, filter everything with default l,k,M.
 			for i in range(self.nch) :
 				self.pix[i].filter_peaks
@@ -448,7 +486,7 @@ class Sensor(object):
 		Event(19, 10, 10, 8510), #
 		Event(43, 29, 12, 8910), #
 		Event(28, 16, 11, 9095), #
-		#CHECKME Event(18, 28, 13, 9545), # this one moves a little bit but is focused well
+		# CHECKME Event(18, 28, 13, 9545), # this one moves a little bit but is focused well
 		Event(36, 29, 12, 10610), #
 		Event(32, 10, 10, 10910), #
 		Event(39, 14, 12, 11030), # lopsided but focused, rectangle is better here
@@ -461,12 +499,12 @@ class Sensor(object):
 		Event(28, 9, 9, 15140), #
 		Event(18, 23, 9, 15475), #
 		Event(40, 42, 14, 16825), # lots of dark pixels here
-		#CHECKME Event(12, 7, 7, 17600), # elliptical and a little broken up
+		# CHECKME Event(12, 7, 7, 17600), # elliptical and a little broken up
 		Event(40, 14, 10, 18345), # nice circle
 		Event(42, 30, 10, 18755), # nice circle but not isolated
 		Event(41, 32, 9, 20370), # moves a bit and is a little bit separated
 		Event(40, 30, 11, 20550), # fat elliptical circle
-		#CHECK ME Event(24, 42, 11, 21140), # circle, lots of darker pixels
+		# CHECK ME Event(24, 42, 11, 21140), # circle, lots of darker pixels
 		# CHECK ME Event(24, 42, 11, 21375), # pretty similar in location/consistency to previous event
 		Event(40, 52, 10, 21830), # small ellipse
 		Event(20, 11, 10, 22270), # starts circular becomes elliptical
@@ -506,7 +544,7 @@ class Sensor(object):
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
 	
-	def vsum_hist(self, show = True, nbins=20, axis = 0):
+	def vsum_hist(self, show = True, lr = (0, 300), nbins=20, axis = 0):
 
 		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
 		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
@@ -539,7 +577,7 @@ class Sensor(object):
 
 
 		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(self.alphaE, nbins)
+			axis.hist(x=self.alphaE, bins=nbins, range=lr)
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -550,7 +588,7 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 			fig = plt.figure(1)
 			axis = fig.add_subplot(111)
-			axis.hist(self.alphaE, nbins)
+			axis.hist(x=self.alphaE, bins=nbins, range=lr)
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -581,6 +619,44 @@ class Sensor(object):
 				ax2.add_artist(circ)
 				fig2.show()
 
+	def select_ellipse(self, x, y, a, b, angle) :
+
+		'''make an elliptical selection on the grid.
+			
+		input:
+		-x : coordinate x
+		-y : coordinate y
+		-a : x axis length defining ellipsoid
+		-b : y axis length defining ellipsoid
+		-angle : angle of rotation with respect to the x axis. 
+		y axis is 90 degrees, -x is 180 degrees, etc. etc.
+		'''
+
+		# caluclate the constants
+		angle =  angle-np.pi
+		sin = np.sin(angle)
+		sin2 = (np.sin(angle))**2
+		cos = np.cos(angle)
+		cos2 = (np.cos(angle))**2
+		a2 = a**2
+		b2 = b**2
+
+		# make a rectangle based on the major axis
+		# needs to be able to account for rotation
+		if a > b :
+			major = a
+		else :
+			major = b
+
+		rect = [((i, j), i+j*self.row) for j in range(y-major, y+major) for i in range(x-major,x+major)]
+
+		# cut out the ellipse. this is just an ellipse distance equation with an angle included..
+		selection = [rect[i][1] for i in range(len(rect)) if \
+		(((((rect[i][0][0]-x)*cos+(rect[i][0][1]-y)*sin2)**2)/a2) + \
+		((((rect[i][0][0]-x)*sin-(rect[i][0][1]-y)*cos2)**2)/b2)) < 1]
+
+		return selection
+
 	def select_circle(self, x, y, r) :
 
 		# circular selection.
@@ -607,11 +683,11 @@ class Sensor(object):
 
 		return [i+j*self.row for j in range(tb[0], tb[1]) for i in range(lr[0], lr[1])]
 
-	def select_test(self, rect=[],circle=[], ellipse=[], arr=[])
+	def select_test(self, rect=[],circle=[], ellipse=[], arr=[]) :
 
-	if not rect or circle or ellipse or arr:
-		print('supply list of arguments for one of the four selection types:')
-		print('rect=[], circle=[], ellipse=[], or a list of custom values "arr".')
+		if not (rect and circle and ellipse and arr):
+			print('supply list of arguments for one of the four selection types:')
+			print('rect=[], circle=[], ellipse=[], or a list of custom values "arr".')
 
 	def selection(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
 
