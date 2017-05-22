@@ -103,6 +103,7 @@ def	peaks_handle(nPk, left, right, l, k, M):
 def model_func(x, A, l, off) :
 	return ( A * np.exp( -l * (x) ) ) + off
 
+
 def save_object(obj, outfile):
 	''' save an object (serialize it) with pickle library.
 	input:
@@ -110,6 +111,10 @@ def save_object(obj, outfile):
 	-outfile: string name, including path, for .pkl file.
 	string must end in ".pkl"
 	'''
+
+	# let's get all of the peaks from each pixel.
+
+
 	with open(outfile, 'wb') as output:
 		pickle.dump(obj, output)
 
@@ -215,7 +220,6 @@ class Sensor(object):
 		# DAQ parameters for this particular dataset.
 		rawinfile = '../data_TM1x1/out22.h5'
 		outdmuxfile = '../data_TM1x1/demuxdouble.h5'
-		pixel = 2093
 		mStart = 913
 		mChLen = 4
 		mNCh = 72**2
@@ -290,12 +294,15 @@ class Sensor(object):
 		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
 
 
-	def make_fakedata(self, mV_noise = 1, res = 1000):
+	def make_pixel(self, mV_noise = 1, res = 1000):
 		'''
-		use this function to make data to input to the analysis chain.
+		use this function to generate data for the analysis chain.
 		if using data without noise, be sure to change the RMS input in the fitting procedure,
 		or  the ls fitting function will complain. This option has been commented out for later use
 		in the Pixel.fit_tau() method.
+
+		### to easily analyze this data, enter the created pixel index into
+		### the 'select' list argument for the Sensor.analyze() function.
 
 		input:
 		-mV_noise : desired RMS noise voltage, in units of milivolts. 
@@ -314,9 +321,15 @@ class Sensor(object):
 
 		# specify M=tau, peak location, amplitude, and the number of points to define
 		# the peak.
-		M_i = np.array([30, 20, 40], dtype=np.float64)
-		M_loc = np.array([1000, 5000, 8000])
-		M_a = np.array([0.02, 0.015, 0.011])
+		
+		# M_i = np.array([40], dtype=np.float64)
+		# M_loc = np.array([5000])
+		# M_a = np.array([0.015])
+
+
+		M_i = np.array([40, 20, 30, 50], dtype=np.float64)
+		M_loc = np.array([1000, 3000, 5000, 8000])
+		M_a = np.array([0.02, 0.015, 0.011, 0.015])
 		npk = len(M_i)
 		M_npt = res
 		baseline = 0.8
@@ -452,21 +465,10 @@ class Sensor(object):
 		Pixel.k = k
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset
-		
 
-		# do analysis on some fake data generated in software. the list 'fake' should
-		#  only be defined if Sensor.input_fakedata() was executed.
-		if fake : 
-			Pixel.threshold = 0.006 # expect a few milivolts of noise.
-			Pixel.minsep = 400 # size depends on proximity of pulses 
-			for i in self.pix:
-				i.peak_det()
-				i.fit_pulses()
+		if simple : # do simple analysis, filter everything with default l,k,M.
+			for i in self.pix :
 				i.filter_peaks()
-
-		elif simple : # do simple analysis, filter everything with default l,k,M.
-			for i in range(self.nch) :
-				self.pix[i].filter_peaks
 
 		elif not select : # if list is empty, analyze all pixels
 			
@@ -983,13 +985,16 @@ class Sensor(object):
 		-pixels : 1D np.array/list containing Pixel indices to plot. 
 		-choose : 'd' plots raw data, 'f' plots filtered data.
 			'b' plots the raw data and filtered data.
-		-avg : impose a line of the average voltage onto the raw data plot.
-		-pk : impose scatter plot of detected peaks.
+		-avg : superimpose a line of the average voltage onto the raw data plot.
+		-pk : superimpose scatter plot of detected peaks.
 		-fit : fit == 'True' superimposes scatter plot of fits 
 			for a channel's peaks onto the same axis plotting the raw data.
 		-lr : input a tuple to slice the plot. for example, if the dataset has
 		25890 points, lr = (2000,4000) would only plot points 2000 through 4000.
 		lr defaults to plotting the entire dataset. 
+		#### lr hasn't been updated to remove peaks / fits that are outside
+		of the window lr specifies, so these functionalities don't work together yet.
+
 		'''
 		if not lr :
 			lr = (0, self.daq_length)
@@ -1002,61 +1007,70 @@ class Sensor(object):
 		ax = fig.add_subplot(111)
 		ax.set_title("multich plot")
 
-		ax.step(x, np.zeros(datalen))
+		# ax.step(x, np.zeros(datalen))
 
 		fig.show()
-		ax.figure.canvas.draw()
+		# ax.figure.canvas.draw()
 
-		# plot raw data, optionally superimpose fits.
+		# plot raw data and filtered data.
 		if (choose == 'b') :
 			
 			fig2 = plt.figure()
 			ax2 = fig2.add_subplot(111)
-			ax2.step(x, np.zeros(datalen))
+			# ax2.step(x, np.zeros(datalen))
 			fig2.show()
-			ax2.figure.canvas.draw()
+			#ax2.figure.canvas.draw()
 
 			print('plotting raw data and filtered data')
+			# loop over desired pixels
 			for i in pixels :
-
-				# extract a list of tuples containing all peak locations, 
-				# taus, and chisq values for the current pixel being plotted.
-
-				peaks = [(j.index, j.tau, j.chisq) for j in self.pix[i].peaks]
-
 				input("press enter for next channel")
+				print('pixel number', i)
+
+				# print peaks' location, tau, and chisq
+				peaks = [(j.index, j.tau, j.chisq) for j in self.pix[i].peaks]
+				print('{0: >5s}, {1: >5s}, {2: >7s}'.format('loc', 'tau', 'chisq'))
+				for k in peaks:
+					print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k[0],k[1], k[2]))
+
 				ax.cla()
 				ax.set_title('raw data, channel no. %i : (%i, %i)' 
 					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
 
-				ax.step(x, self.pix[i].data[lr[0]:lr[1]])
+				# plot desired slice of data.
+				ax.step(x, self.pix[i].data[lr[0]:lr[1]], color='b')
+
+				# check for avg/pk/fit inputs to plot these features
 				if avg :
-					ax.step(x, np.ones(datalen)*self.pix[i].avg)
+					ax.step(x, np.ones(datalen)*self.pix[i].avg, color = 'y')
 
 				if pk :
-					# list comprehension of all found peak locations in a pixel
 					peak_indices = [j.index for j in self.pix[i].peaks]
-					ax.scatter(peak_indices, self.pix[i].data[peak_indices])
+					ax.scatter(peak_indices, self.pix[i].data[peak_indices], color='r', marker ='x')
 
 				if fit :
 					# impose a scatter plot for each fitted peak onto the raw data.
 					for j in range(self.pix[i].npk) :
 						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
 							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
-							marker='o')
-				ax2.cla()
-				if pk :
-					ax2.scatter(peak_indices, self.pix[i].filt[peak_indices])
+							marker='o', color = 'g')
 
+				# now plot the filtered data.		
+				ax2.cla()
 				ax2.set_title('filtered data, channel no. %i : (%i, %i)' 
 					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
-				ax2.step(x, self.pix[i].filt[lr[0]:lr[1]])
+				ax2.step(x, self.pix[i].filt[lr[0]:lr[1]], color='b')
 				
+				# superimpose peaks if desired.
+				if pk :
+					ax2.scatter(peak_indices, self.pix[i].filt[peak_indices], marker ='x', color='r')
 
+				# ax is raw data, ax2 is filtered data.
 				ax.figure.canvas.draw()
 				ax2.figure.canvas.draw()
 
-		if (choose == 'd') :
+		# plot the raw data.
+		elif (choose == 'd') :
 			print('plotting raw data')
 			for i in pixels :
 				input("press enter for next channel")
@@ -1088,6 +1102,10 @@ class Sensor(object):
 
 		else :
 			print('unknown input: set "choose" = "f" for filtered data, "d" for raw data, or "b" for both.')
+
+		input('press enter to close figures')
+		plt.close(fig) # raw 
+		plt.close(fig2) # filt
 
 	def pixelate_tri_val(self) :
 		''' provide 72X72 data array on channel status. 0 is a channel with no found peaks.
@@ -1216,9 +1234,9 @@ class Pixel(object):
 		# else :
 		# 	self.type = None
 
-	def peak_det(self, sign = 1):
+	def peak_det(self):
 		''' 
-		input:
+		relevant pixel attributes:
 		- data : numpy array with peaks to look for.
 		- mean: average value of 'data'.
 		- threshold : minimum acceptable value (volts) above the average signal level for a peak.
@@ -1249,17 +1267,17 @@ class Pixel(object):
 		# first, find all of the positive derivative values. going up the peak.
 		# this returns indices of possible candidates. we want to offset by two because
 		# the convolution cuts the array length by len(kernel)-1
-		if (sign == 1) :
+		if (Pixel.sign == 1) :
 			candidates = np.where(dfn > 0)[0] + (len(kernel)-1)
-		elif (sign == -1) :
+		elif (Pixel.sign == -1) :
 			candidates = np.where(dfn < 0)[0] + (len(kernel)-1)
 
-		pk = sorted(set(candidates).intersection(np.where(ddfn == -sign*2)[0] + 1))
-		alpha = self.avg + (sign * Pixel.threshold)
+		pk = sorted(set(candidates).intersection(np.where(ddfn == -1*Pixel.sign*2)[0] + 1))
+		alpha = self.avg + (Pixel.sign * Pixel.threshold)
 
-		if (sign == 1) :	# apply threshold to the raw data, not the smoothed data 
+		if (Pixel.sign == 1) :	# apply threshold to the raw data, not the smoothed data 
 			pk = np.array(pk)[self.data[pk] > alpha]
-		elif (sign == -1) :
+		elif (Pixel.sign == -1) :
 			pk = np.array(pk)[self.data[pk] < alpha]
 
 		# list comprehension version of toss np.array for minimum separation discrimination.
@@ -1422,7 +1440,7 @@ class Pixel(object):
 			# print('number of peaks =', npk)
 			# print('LEFT = ', LR[0])
 			# print('RIGHT = ', LR[1])
-			M = np.array([self.peaks[i].tau for i in range(self.npk)])
+			M = np.array([i.tau for i in self.peaks])
 			# peaks_handle prepares a Ctypes 'Structure' object to make a C Structure.
 			PEAK = peaks_handle(self.npk, LR[0], LR[1], l_arr, k_arr, M)
 			# self.filt = np.empty_like(self.data)
