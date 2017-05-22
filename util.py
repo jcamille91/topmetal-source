@@ -241,7 +241,7 @@ class Sensor(object):
 		-cut : a list with two elements: beginning and endpoint of desired data.
 		defaults to empty list, which uses the entire dataset.
 		*** nothing has been done to make 'cut' work with the analysis chain yet.
-		if may not be practical because the savitsky-golay filter and trapezoidal filter will
+		it may not be useful anyways because the savitsky-golay filter and trapezoidal filter will
 		give different results if used on the whole dataset versus only a chunk of it.
 		'''
 
@@ -290,11 +290,18 @@ class Sensor(object):
 		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
 
 
-	def input_fakedata(self):
+	def make_fakedata(self, mV_noise = 1, res = 1000):
 		'''
 		use this function to make data to input to the analysis chain.
-		if using data without noise, be sure to change the RMS input to
-		the fitting procedure.
+		if using data without noise, be sure to change the RMS input in the fitting procedure,
+		or  the ls fitting function will complain. This option has been commented out for later use
+		in the Pixel.fit_tau() method.
+
+		input:
+		-mV_noise : desired RMS noise voltage, in units of milivolts. 
+		for reference, the typical topmetal- II- pixel  has about 2mV rms of noise.
+		-res : number of discrete samples to define a continuous function on.
+		Be sure the specified 'daq_length' can accomodate this number of points, or any other features.
 		'''
 		# create list to store data. normally 5184 channels are placed in this list,
 		# but one or just several are fine for experimenting with fake data.
@@ -318,15 +325,15 @@ class Sensor(object):
 		if mV_noise == 0 :
 			noise = 0
 		else :
-			noise = np.random.normal(loc = 0, scale = mV_noise*.001, size=data_len)
+			noise = np.random.normal(loc = 0, scale = mV_noise*.001, size=self.daq_length)
 
 		# build an array with exponentially decaying pulses just defined above.
-		exp = np.ones(data_len, dtype=np.float64)*baseline
+		exp = np.ones(self.daq_length, dtype=np.float64)*baseline
 		for i in range(npk) :
 			exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
 		exp += noise
 
-
+		self.pix.append(Pixel(0, exp, baseline, mV_noise*0.001))
 
 	def noise_hist(self, nbins=2000, end=0.003, axis=0):
 		''' make histogram of noise across 5184 channels. 
@@ -367,10 +374,11 @@ class Sensor(object):
 
 
 
-	def analyze(self, simple = False, select = [], fake = [], noisethresh = 0.002,
-				minsep = 50, threshold = 0.006,  	   			   # peak det
-			    fit_length = 300, fudge = 20,   	   			   # lsq fit
-			    l = 150, k = 20, M_def = 40, shaper_offset = 20): # shaper
+	def analyze(self, simple = False, select = [], fake = False, noisethresh = 0.002,
+				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, # peak det
+			    fit_length = 300, fudge = 20,   	   			   				   # lsq fit
+			    l = 150, k = 20, M_def = 40, shaper_offset = 20):  				   # shaper
+
 		''' analysis chain: 
 		1. find peaks 
 		2. fit peaks 
@@ -380,16 +388,31 @@ class Sensor(object):
 		-simple : set 'True' to just filter all the channels with the default filter parameters.
 		 no peak detection / exponential decay fitting.
 		-select : provide python list of desired channels. provide empty list to analyze all channels.
+		-fake : set 'True' to run analysis on fake data 
 		-noisethresh : threshold in volts to classify channels. channels above this value are labeled with
 		a string  as 'noisy'.
 
 		(peak detection)
+
+		-sign : this allows peak detection algorithm to handle '+' or '-' data. 
+		postitive data with peaks -> sign = 1
+		negative data with valleys -> sign = -1
 		-minsep : minimum separation from peaks. if two are more peaks are within minsep,
 		only the first peak candidate is saved.
 		-threshold : minimum value for accepted peaks. candidate peaks
 		with max value smaller than the threshold are rejected.
+		
+		*** sgwin and sgorder are filter parameters for smoothing the data with a savitsky-golay filter
+		before peak detection. derivative based peak detection on noisy signals requires smoothing. ***
+
+		-sgwin : window of savitsky-golay filter. smaller window picks up smaller features
+		and vice-versa. window is number of adjacent points for polynomial fitting.
+		-sgorder : order of savitsky-golay polynomial for fitting to data.
+	
+
 
 		(tau fitting)
+
 		-fit_length : number of datapoints to fit. generally (2-3) expected tau in length.
 		-fudge : if consecutive peaks are closer than fit_length, the procedure fits the 
 		 smaller space between the two consecutive peaks. In this case, 'fudge' many points 
@@ -397,6 +420,7 @@ class Sensor(object):
 		 does not catch the rise of the next peak.
 
 		(trapezoidal filter)
+
 		-l, k, M : trapezoidal filter parameters. 
 		 l-k specifies the flat-top duration.
 		 l specifies the delay of the filter
@@ -414,8 +438,12 @@ class Sensor(object):
 		Pixel.daq_length = self.daq_length 
 		Pixel.noisethresh = 0.002
 
+		Pixel.sign = sign
 		Pixel.threshold = threshold
 		Pixel.minsep = minsep
+		Pixel.sgwin = sgwin
+		Pixel.sgorder = sgorder
+
 
 		Pixel.fudge = fudge
 		Pixel.fit_length = fit_length
@@ -429,12 +457,14 @@ class Sensor(object):
 		# do analysis on some fake data generated in software. the list 'fake' should
 		#  only be defined if Sensor.input_fakedata() was executed.
 		if fake : 
+			Pixel.threshold = 0.006 # expect a few milivolts of noise.
+			Pixel.minsep = 400 # size depends on proximity of pulses 
 			for i in self.pix:
 				i.peak_det()
 				i.fit_pulses()
 				i.filter_peaks()
 
-		if simple : # do simple analysis, filter everything with default l,k,M.
+		elif simple : # do simple analysis, filter everything with default l,k,M.
 			for i in range(self.nch) :
 				self.pix[i].filter_peaks
 
@@ -840,8 +870,7 @@ class Sensor(object):
 
 	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = 0, vmax = 0.007) :
 
-		''' plot successive pixelated images of the 72*72 sensor. Set 'stepthru' to 'True'
-		to step through each image by keyboard input.
+		''' plot successive pixelated images of the 72*72 sensor.
 
 		input:
 		-data : a (5184 x number of time samples) numpy array.
@@ -849,7 +878,8 @@ class Sensor(object):
 		-stepsize : decides how many of the time points to plot. if '1',
 		all of the data is plotted. if '10' for example, each successive
 		10th point in time is plotted. stepsize must divide into integers. 
-		-stepthru : 
+		-stepthru : if True, press enter to step through frame by frame. if False,
+		the images stream through on their own.
 		'''
 
 		a = np.arange(start, stop, stepsize)
@@ -891,6 +921,7 @@ class Sensor(object):
 				#ax.set_title("Time elapsed: %f seconds" % t)
 				im.set_data(data_2d[:,:,j])
 				im.axes.figure.canvas.draw()
+
 		# close the figure
 		plt.close(fig)
 
@@ -941,7 +972,7 @@ class Sensor(object):
 			fig.show()
 
 
-	def plot_waveform(self, pixels, choose, avg=True, fit = False, lr = None) :
+	def plot_waveform(self, pixels=[], choose='b', avg=True, pk = True, fit = False, lr = None) :
 		'''
 		This function can plot a series of channels. When the user
 		presses 'Enter', the next channel's plot is replaces the prior.
@@ -953,6 +984,7 @@ class Sensor(object):
 		-choose : 'd' plots raw data, 'f' plots filtered data.
 			'b' plots the raw data and filtered data.
 		-avg : impose a line of the average voltage onto the raw data plot.
+		-pk : impose scatter plot of detected peaks.
 		-fit : fit == 'True' superimposes scatter plot of fits 
 			for a channel's peaks onto the same axis plotting the raw data.
 		-lr : input a tuple to slice the plot. for example, if the dataset has
@@ -986,6 +1018,12 @@ class Sensor(object):
 
 			print('plotting raw data and filtered data')
 			for i in pixels :
+
+				# extract a list of tuples containing all peak locations, 
+				# taus, and chisq values for the current pixel being plotted.
+
+				peaks = [(j.index, j.tau, j.chisq) for j in self.pix[i].peaks]
+
 				input("press enter for next channel")
 				ax.cla()
 				ax.set_title('raw data, channel no. %i : (%i, %i)' 
@@ -995,13 +1033,21 @@ class Sensor(object):
 				if avg :
 					ax.step(x, np.ones(datalen)*self.pix[i].avg)
 
+				if pk :
+					# list comprehension of all found peak locations in a pixel
+					peak_indices = [j.index for j in self.pix[i].peaks]
+					ax.scatter(peak_indices, self.pix[i].data[peak_indices])
 
 				if fit :
+					# impose a scatter plot for each fitted peak onto the raw data.
 					for j in range(self.pix[i].npk) :
 						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
 							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
 							marker='o')
 				ax2.cla()
+				if pk :
+					ax2.scatter(peak_indices, self.pix[i].filt[peak_indices])
+
 				ax2.set_title('filtered data, channel no. %i : (%i, %i)' 
 					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
 				ax2.step(x, self.pix[i].filt[lr[0]:lr[1]])
@@ -1092,9 +1138,6 @@ class Sensor(object):
 		fig.show()
 		im.axes.figure.canvas.draw()
 
-	def prepare_openCV(self) :
-		a = 'blah'
-	
 class Pixel(object):
 	'''
 	class for raw data and attributes of a pixel.
@@ -1149,7 +1192,7 @@ class Pixel(object):
 		-peaks : a list of 'Peak' objects
 		-offset : for shifting shaper transition points +/- -> fwd/bkwd.
 		 useful because it's hard to get peak locations perfect, and because we want to
-		 avoid transition on peaks' rise time, which won't account for in our fit model.
+		 avoid transition on peaks' rise time, which we don't account for in our simple fit model.
 		-npk : total number of peaks
 		-type : descriptor for pixel. some pixels are okay, others are noisy,
 		3 are for demux and some show weird basleine behavior, may be do to alpha particle impacts, or just bad pixels.
@@ -1173,7 +1216,7 @@ class Pixel(object):
 		# else :
 		# 	self.type = None
 
-	def peak_det(self, threshold = 0.006, minsep = 40, sgwin = 15, sgorder = 4, sign = 1):
+	def peak_det(self, sign = 1):
 		''' 
 		input:
 		- data : numpy array with peaks to look for.
@@ -1194,7 +1237,7 @@ class Pixel(object):
 		- trig(optional) : namedtuple for testing each step of peak detection if desired.
 		'''	
 
-		f = savgol_scipy(self.data, sgwin, sgorder) # smooth data
+		f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
 		kernel = [1, 0, -1]	# calculate each derivative
 		df = convolve(f, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
 		dfn = np.sign(df) # normalize derivative to 1. 1 increasing, -1 decreasing, 0 const.
@@ -1223,7 +1266,7 @@ class Pixel(object):
 		# list is faster for 'append' operations, especially when there are many false peaks.
 		# 'toss' gives the indices of the bad peaks in the array of peak locations, 
 		# not the indices of the peaks in the dataset.
-		toss = [i+1 for i in range(len(pk)-1) if ((pk[i+1]-pk[i]) < minsep)]
+		toss = [i+1 for i in range(len(pk)-1) if ((pk[i+1]-pk[i]) < Pixel.minsep)]
 		
 		# 'badpk' would give the location of thrown out peaks in the dataset, incase we want this later.
 		# badpk = [pk[i+1] for i in range(len(pk)-1) if ((pk[i+1]-pk[i]) < minsep)]
@@ -1291,6 +1334,9 @@ class Pixel(object):
 
 			# include a 'fake' peak to act as endpoint for last iteration.
 			self.peaks.append(Peak(Pixel.daq_length-1))
+
+			# for q in self.peaks:
+			# 	if q+1
 
 			for j in range(self.npk) :
 				# if peaks are closer than fit_length, fit the space between them minus 'fudge'.
