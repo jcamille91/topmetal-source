@@ -390,7 +390,7 @@ class Sensor(object):
 	def analyze(self, simple = False, select = [], fake = False, noisethresh = 0.002,
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, # peak det
 			    fit_length = 300, fudge = 20,   	   			   				   # lsq fit
-			    l = 150, k = 20, M_def = 40, shaper_offset = 20):  				   # shaper
+			    l = 150, k = 20, M_def = 40, shaper_offset = -20):  				   # shaper
 
 		''' analysis chain: 
 		1. find peaks 
@@ -466,6 +466,13 @@ class Sensor(object):
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset
 
+		print('analysis parameters... \n')
+		print('peak detection: sign = %i, threshold = %i, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
+			% (sign, threshold, minsep, sgwin, sgorder))
+		print('pulse fitting: fudge = %i, fit length = %i \n'  % (fudge, fit_length))
+		print('shaping filter: l = %i, k = %i, \n default M = %i, offset = %i \n' % (l, k, M_def, shaper_offset))
+		input('press enter to analyze with given parameters')
+
 		if simple : # do simple analysis, filter everything with default l,k,M.
 			for i in self.pix :
 				i.filter_peaks()
@@ -500,6 +507,9 @@ class Sensor(object):
 		# interest for future reference 
 		# all taken from out22.h5
 
+		# Event methods need row to retrieve pixel selections.
+		Event.row = self.row
+
 		# the length of an event should be ~ l+k, determined by the trapezoidal
 		# filter parameters.
 		self.trap_length = Pixel.l + Pixel.k
@@ -508,48 +518,48 @@ class Sensor(object):
 		self.alpha_events = [
 		Event(10, 29, 10, 3520), #
 		# 4800, next 320, 470, 500, 900
-		Event(15, 9, 9, 6510), #
-		Event(45, 31, 10, 6580), #
-		Event(11, 30, 10, 6845), #
-		Event(18, 45, 15, 7020), #
-		Event(25, 46, 13, 7505), #
-		Event(18, 45, 15, 7020), #
-		Event(23, 10, 10, 7865), #
-		Event(19, 10, 10, 8510), #
-		Event(43, 29, 12, 8910), #
-		Event(28, 16, 11, 9095), #
-		# CHECKME Event(18, 28, 13, 9545), # this one moves a little bit but is focused well
-		Event(36, 29, 12, 10610), #
-		Event(32, 10, 10, 10910), #
-		Event(39, 14, 12, 11030), # lopsided but focused, rectangle is better here
-		Event(42, 17, 12, 12460), #
-		Event(22, 48, 12, 12850), #
-		Event(9, 28, 9, 13060), #
-		Event(42, 17, 12, 12460), #
-		Event(18, 28, 10, 13700), #
-		Event(20, 9, 9, 14425), # elliptical and focused
-		Event(28, 9, 9, 15140), #
-		Event(18, 23, 9, 15475), #
-		Event(40, 42, 14, 16825), # lots of dark pixels here
-		# CHECKME Event(12, 7, 7, 17600), # elliptical and a little broken up
-		Event(40, 14, 10, 18345), # nice circle
-		Event(42, 30, 10, 18755), # nice circle but not isolated
-		Event(41, 32, 9, 20370), # moves a bit and is a little bit separated
-		Event(40, 30, 11, 20550), # fat elliptical circle
-		# CHECK ME Event(24, 42, 11, 21140), # circle, lots of darker pixels
-		# CHECK ME Event(24, 42, 11, 21375), # pretty similar in location/consistency to previous event
-		Event(40, 52, 10, 21830), # small ellipse
-		Event(20, 11, 10, 22270), # starts circular becomes elliptical
-		Event(40, 35, 10, 22675), # big messy circle
-		Event(12, 8, 8, 23060), # elliptical blip
-		Event(7, 25, 7, 23220), # two disjointed blobs, probably can't capture both with a circle
-		Event(16, 7, 7, 23400), #
-		Event(40, 12, 10, 23545), # circle, but not totally isolated from other signal
-		Event(31, 13, 12, 23705), #
-		#CHECK ME Event(26, 6, 6, 23775), # very small circle, not isolated
-		Event(25, 54, 13, 23890), # kind of scattered, not a closed circle
-		Event(12, 30, 12, 24175), # scattered circle, in happens very close in time to two other events
-		Event(13, 29, 12, 24940), # big elliptical blob, focused
+		Event(15, 9, 9, 6510, 'c'), #
+		Event(45, 31, 10, 6580, 'c'), #
+		Event(11, 30, 10, 6845, 'c'), #
+		Event(18, 45, 15, 7020, 'c'), #
+		Event(25, 46, 13, 7505, 'c'), #
+		Event(18, 45, 15, 7020, 'c'), #
+		Event(23, 10, 10, 7865, 'c'), #
+		Event(19, 10, 10, 8510, 'c'), #
+		Event(43, 29, 12, 8910, 'c'), #
+		Event(28, 16, 11, 9095, 'c'), #
+		# CHECKME Event(18, 28, 13, 9545, 'c'), # this one moves a little bit but is focused well
+		Event(36, 29, 12, 10610, 'c'), #
+		Event(32, 10, 10, 10910, 'c'), #
+		Event(39, 14, 12, 11030, 'c'), # lopsided but focused, rectangle is better here
+		Event(42, 17, 12, 12460, 'c'), #
+		Event(22, 48, 12, 12850, 'c'), #
+		Event(9, 28, 9, 13060, 'c'), #
+		Event(42, 17, 12, 12460, 'c'), #
+		Event(18, 28, 10, 13700, 'c'), #
+		Event(20, 9, 9, 14425, 'c'), # elliptical and focused
+		Event(28, 9, 9, 15140, 'c'), #
+		Event(18, 23, 9, 15475, 'c'), #
+		Event(40, 42, 14, 16825, 'c'), # lots of dark pixels here
+		# CHECKME Event(12, 7, 7, 17600, 'c'), # elliptical and a little broken up
+		Event(40, 14, 10, 18345, 'c'), # nice circle
+		Event(42, 30, 10, 18755, 'c'), # nice circle but not isolated
+		Event(41, 32, 9, 20370, 'c'), # moves a bit and is a little bit separated
+		Event(40, 30, 11, 20550, 'c'), # fat elliptical circle
+		# CHECK ME Event(24, 42, 11, 21140, 'c'), # circle, lots of darker pixels
+		# CHECK ME Event(24, 42, 11, 21375, 'c'), # pretty similar in location/consistency to previous event
+		Event(40, 52, 10, 21830, 'c'), # small ellipse
+		Event(20, 11, 10, 22270, 'c'), # starts circular becomes elliptical
+		Event(40, 35, 10, 22675, 'c'), # big messy circle
+		Event(12, 8, 8, 23060, 'c'), # elliptical blip
+		Event(7, 25, 7, 23220, 'c'), # two disjointed blobs, probably can't capture both with a circle
+		Event(16, 7, 7, 23400, 'c'), #
+		Event(40, 12, 10, 23545, 'c'), # circle, but not totally isolated from other signal
+		Event(31, 13, 12, 23705, 'c'), #
+		#CHECK ME Event(26, 6, 6, 23775, 'c'), # very small circle, not isolated
+		Event(25, 54, 13, 23890, 'c'), # kind of scattered, not a closed circle
+		Event(12, 30, 12, 24175, 'c'), # scattered circle, in happens very close in time to two other events
+		Event(13, 29, 12, 24940, 'c'), # big elliptical blob, focused
 
 
 		]
@@ -597,11 +607,11 @@ class Sensor(object):
 		# each event. store the voltage summation for histogram.
 		for ev in self.alpha_events :
 			
-
-			circle = self.select_circle(ev.x, ev.y, ev.radius)
+			# retrieve a list of pixels defining the region of interest for this event.
+			sel = ev.retrieve_selection()
 			# we'll use generator-expressions over list comprehensions here since we
 			# don't need to store all the constituent values to be summed.
-			vsum = sum(self.pix[i].filt[j] for i in circle for j in range(ev.index, ev.index+self.trap_length)) 
+			vsum = sum(self.pix[i].filt[j] for i in sel for j in range(ev.index, ev.index+self.trap_length)) 
 			#vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
 			#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
 			self.alphaE.append(vsum)
@@ -1524,11 +1534,91 @@ class Peak(object):
 
 class Event(object):
 
-	def __init__(self, x, y, radius, index):
+	def __init__(self, x, y, radius, x2, y2, radius, index, shape):
 		self.radius = radius
 		self.x = x
 		self.y = y
+		self.a = a
+		self.b = b
+		self.angle = angle
+		self.lr = lr
+		self.tb = rb
 		self.index = index
+		self.shape = shape
+
+	def retrieve_selection(self) :
+
+		if self.shape = 'c':
+			return self.circle()
+		elif self.shape = 'r'
+			return self.rectangle()
+		elif self.shape = 'e'
+			return self.ellipse()
+
+	def ellipse(self) :
+
+	'''make an elliptical selection on the grid.
+		
+	input:
+	-x : coordinate x
+	-y : coordinate y
+	-a : x axis length defining ellipsoid
+	-b : y axis length defining ellipsoid
+	-angle : angle of rotation with respect to the x axis. 
+	y axis is 90 degrees, -x is 180 degrees, etc. etc.
+	'''
+
+	# caluclate the constants
+	self.angle =  self.angle-np.pi
+	sin = np.sin(self.angle)
+	sin2 = (np.sin(self.angle))**2
+	cos = np.cos(self.angle)
+	cos2 = (np.cos(self.angle))**2
+	a2 = self.a**2
+	b2 = self.b**2
+
+	# make a rectangle based on the major axis
+	# needs to be able to account for rotation
+	if self.a > self.b :
+		major = a
+	else :
+		major = b
+
+	rect = [((i, j), i+j*self.row) for j in range(self.y-major, self.y+major) for i in range(self.x-major,self.x+major)]
+
+	# cut out the ellipse. this is just an ellipse distance equation with an angle included..
+	selection = [rect[i][1] for i in range(len(rect)) if \
+	(((((rect[i][0][0]-self.x)*cos+(rect[i][0][1]-self.y)*sin2)**2)/a2) + \
+	((((rect[i][0][0]-self.x)*sin-(rect[i][0][1]-self.y)*cos2)**2)/b2)) < 1]
+
+	return selection
+
+	def circle(self) :
+
+		# circular selection.
+		rect = [((i, j), i+j*self.row) for j in range(self.y-r, self.y+r) for i in range(self.x-r,self.x+r)]
+		# linear location in 5184 element array of a 'radius' sized rectangle
+		#rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
+		# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
+		#xy = [(self.pix[i].loc, i) for i in rectangle]
+		# if the element is inside of the circle's radius, include it. We're cutting a circle out of a rectangle
+		selection = [rect[i][1] for i in range(len(rect)) if np.sqrt((rect[i][0][0]-self.x)**2 + (rect[i][0][1]-self.y)**2) < r]
+		
+		return selection
+
+		# retrieve all voltage values for the selected pixels and frames.
+		# values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
+	def rectangle(self) :
+
+		'''make a rectangular selection of pixels.
+		input:
+		-lr : the left and right most points as a two element list.
+		-tb : the top and bottom most points as a two element list.
+
+		'''
+
+		return [i+j*self.row for j in range(tb[0], tb[1]) for i in range(lr[0], lr[1])]
+
 
 def get_wfm_one(infile, ch, npt, plt) :
 
