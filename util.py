@@ -469,6 +469,9 @@ class Sensor(object):
 		 transitioning parameters after the peak has already begun
 		 (it won't yield a trapezoidal response) 
 
+		 ### note: shaper_offset has no effect on data with 0 or 1 peaks. shaper offset is only applied to datasets
+		 with multiple peaks. this is reflected in Pixel.filter_peaks() logic.
+
 		'''
 		# these 'Pixel' class attributes are used by methods for analysis.
 		# main three 'Pixel' methods are : peak_det(), fit_pulses(), filter_peaks().
@@ -489,7 +492,6 @@ class Sensor(object):
 		Pixel.k = k
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset
-		Pixel.zero_pk = PEAK
 
 		# let's define a peak object for a 'no peak' channel just once, so it can be reused.
 		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l
@@ -497,7 +499,7 @@ class Sensor(object):
 		LEFT = np.array(0, dtype = c_ulong)
 		RIGHT = np.array(self.daq_length, dtype = c_ulong)		
 		M = np.array(M_def)
-		Pixel.zero_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M_def)
+		Pixel.zero_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M)
 
 		print('analysis parameters... \n')
 		print('peak detection: sign = %i, threshold = %i, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
@@ -512,7 +514,7 @@ class Sensor(object):
 
 		elif simple : # do simple analysis, filter everything with default l,k,M.
 			for i in self.pix :
-				i.filter_peaks(new=True)
+				i.filter_peaks(simple=True)
 
 		elif not select : # if list is empty, analyze all pixels
 			
@@ -1429,7 +1431,7 @@ class Pixel(object):
 		if self.peaks :
 
 			# if the last peak is too close to the end of the dataset, we won't try to fit it.
-			if (self.daq_length - self.peaks[self.npk-1].index < Pixel.fit_length + Pixel.fudge) :
+			if (Pixel.daq_length - self.peaks[self.npk-1].index < Pixel.fit_length + Pixel.fudge) :
 				self.peaks.pop()
 				self.npk -= 1
 			# assumption: data is modeled by a 3 parameter decaying exponential.
@@ -1516,19 +1518,16 @@ class Pixel(object):
 		elif (self.npk == 1) : # one peak found.
 			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.k
+			LEFT = np.array(0, dtype = c_ulong)
+			RIGHT = np.array(Pixel.daq_length, dtype = c_ulong)
 			M = np.array([i.tau for i in self.peaks])
-			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(Pixel.zero_pk), c_double(self.avg))
-			PEAK = peaks_handle(self.npk, LR[0], LR[1], l_arr, k_arr, M)
-
-
-			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
-			c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(self.peaks[0].tau), c_double(self.avg))
+			PEAK = peaks_handle(self.npk, LEFT, RIGHT, l_arr, k_arr, M)
+			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
 
 		elif (self.npk > 1) : # multiple peaks found.
 			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.k
 			LR = self.pk2LR()
-
 
 			# leave this comment in to check values later if desired
 			# print('l', l)
@@ -1570,7 +1569,7 @@ class Pixel(object):
 			
 		LEFT[0] = 0
 		LEFT[self.npk-1] = self.peaks[self.npk-1].index + self.shaper_offset
-		RIGHT[self.npk-1] = self.daq_length
+		RIGHT[self.npk-1] = Pixel.daq_length
 
 		# trapezoidal filter uses size_t, or c_ulong, as its datatype
 		# for left and right. they index locations possibly larger than int allows.
@@ -1589,9 +1588,9 @@ class Pixel(object):
 		- choose : string to select 'data' or 'filt'
 		'''
 		if (lr == None) :
-			lr = (0, self.daq_length-1)
+			lr = (0, Pixel.daq_length-1)
 
-		xaxis = np.arange(self.daq_length)[lr[0]:lr[1]]
+		xaxis = np.arange(Pixel.daq_length)[lr[0]:lr[1]]
 		if (choose == 'd') :
 			d = self.data[lr[0]:lr[1]]
 
@@ -1620,11 +1619,10 @@ class Pixel(object):
 
 class Peak(object):
 
-	def __init__(self, index):
+	def __init__(self, index) :
 		self.index = index
 		# self.tau = None
 		# self.chisq = None
-		
 
 class Event(object):
 
