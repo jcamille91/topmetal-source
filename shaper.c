@@ -88,13 +88,13 @@ void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, 
     // use this loop to display that filter parameters are being
     // received correctly
 
-    // for (z = 0; z<PEAKS->nPk; z++) {
-    // fprintf(stderr, "LEFT[%zu] = %zu\n", z, PEAKS->LEFT[z]);
-    // fprintf(stderr, "RIGHT[%zu] = %zu\n", z, PEAKS->RIGHT[z]);
-    // fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
-    // fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
-    // fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
-    // }
+    for (z = 0; z<PEAKS->nPk; z++) {
+    fprintf(stderr, "LEFT[%zu] = %zu\n", z, PEAKS->LEFT[z]);
+    fprintf(stderr, "RIGHT[%zu] = %zu\n", z, PEAKS->RIGHT[z]);
+    fprintf(stderr, "l[%zu] = %zu\n", z, PEAKS->l[z]);
+    fprintf(stderr, "k[%zu] = %zu\n", z, PEAKS->k[z]);
+    fprintf(stderr, "M[%zu] = %f\n", z, PEAKS->M[z]);
+    }
 
 
 
@@ -143,7 +143,7 @@ void shaper_multi(double *input, double *filter, size_t length, peaks_t *PEAKS, 
             //     s = s + dkl;
             // }
             
-                filter[i] = s/(fabs(M) * (double)k);
+            filter[i] = s/(fabs(M) * (double)k);
             //}
         }
     }
@@ -163,7 +163,7 @@ void shaper_single(double *input, double *filter, size_t length, size_t k, size_
     ssize_t i, j, jk, jl, jkl, idx1=0;
     double vj, vjk, vjl, vjkl, dkl, s = 0.0, pp = 0.0;
 
-    /* can use these to verify that the desired input is reaching the function.
+     // can use these to verify that the desired input is reaching the function.
     fprintf(stderr, "length: %zu\n", length);
     fprintf(stderr, "k: %zu\n", k);
     fprintf(stderr, "l: %zu\n", l);
@@ -171,7 +171,7 @@ void shaper_single(double *input, double *filter, size_t length, size_t k, size_
     fprintf(stderr, "in[999]: %f\n", input[998]);
     fprintf(stderr, "in[1000]: %f\n", input[999]);
     fprintf(stderr, "in[1001]: %f\n", input[1000]);
-    */
+    
 
     for(i = 0; i < length; i++) {
         j=i; jk = j-k; jl = j-l; jkl = j-k-l;
@@ -185,15 +185,17 @@ void shaper_single(double *input, double *filter, size_t length, size_t k, size_
         dkl = vj - vjk - vjl + vjkl;
         pp = pp + dkl;
 
-        if(M >= 0.0) {
-            s = s + pp + dkl * M;
-        }
+        s = s + pp + dkl * M;
+
+        // if(M >= 0.0) {
+        //     s = s + pp + dkl * M;
+        // }
         
-        else { /* infinite decay time, so the input is a step function */
-            s = s + dkl;
-        }
+        // else {  infinite decay time, so the input is a step function 
+        //     s = s + dkl;
+        // }
         
-        filter[i] = s / (fabs(M) * (double)k);
+        filter[i] = s/(fabs(M) * (double)k);
     }
 }
 void shaper_hdf5(char *inFileName, char *outFileName, size_t k, size_t l, double M)

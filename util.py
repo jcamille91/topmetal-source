@@ -257,7 +257,7 @@ class Sensor(object):
 		if not cut: # do all of the data
 
 			self.daq_length = len(data[0])
-
+			Sensor.daq_length = len(data[0])
 
 			# iterate over a list of 'Pixel' objects, supply data, avg, and rms.
 			if ((npt == False) or (npt >= self.daq_length)) :
@@ -414,7 +414,7 @@ class Sensor(object):
 	def analyze(self, simple = False, select = [], step = False, noisethresh = 0.002,
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, # peak det
 			    fit_length = 300, fudge = 20,   	   			   				   # lsq fit
-			    l = 150, k = 20, M_def = 40, shaper_offset = -20):  				   # shaper
+			    l = 150, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
 
 		''' analysis chain: 
 		1. find peaks 
@@ -489,6 +489,15 @@ class Sensor(object):
 		Pixel.k = k
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset
+		Pixel.zero_pk = PEAK
+
+		# let's define a peak object for a 'no peak' channel just once, so it can be reused.
+		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l
+		k_arr = np.ones(1, dtype = c_ulong)*Pixel.k	
+		LEFT = np.array(0, dtype = c_ulong)
+		RIGHT = np.array(self.daq_length, dtype = c_ulong)		
+		M = np.array(M_def)
+		Pixel.zero_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M_def)
 
 		print('analysis parameters... \n')
 		print('peak detection: sign = %i, threshold = %i, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
@@ -503,7 +512,7 @@ class Sensor(object):
 
 		elif simple : # do simple analysis, filter everything with default l,k,M.
 			for i in self.pix :
-				i.filter_peaks()
+				i.filter_peaks(new=True)
 
 		elif not select : # if list is empty, analyze all pixels
 			
@@ -540,7 +549,6 @@ class Sensor(object):
 
 		# the length of an event should be ~ l+k, determined by the trapezoidal
 		# filter parameters.
-		self.trap_length = Pixel.l + Pixel.k
 
 		# circle shaped events; use select_circle(x, y, radius, index)
 		self.alpha_events = [
@@ -616,8 +624,33 @@ class Sensor(object):
 		# ev = Event(27, 36, 8, 1800) #
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
+	def cal_check(self, selection=[]) :
+		'''
+		let's observe how an exponential pulse is mapped to a voltage summation.
+		there are three parts of the trapezoidal response we add, the two slopes and the flat top.
+
+		(l-k)*amplitude
+		((amplitude)/k)
+
+		'''
+
+		for ev in event:
+			sel = ev.retrieve_selection()
+			evstart = ev.i
+			for i in sel :
+				for peak in self.pix[i].peaks :
+					flttop = (Pixel.l-Pixel.k)
+
+
+
+		# flat top summation
+		fltop = (Pixel.l-Pixel.k) * A
+		# sum on 'n' 'from 0 to k' ramp summation, twice for up and down slopes.
+		ramp = 2*(A/Pixel.k)*(Pixel.k*(Pixel.k+1)/2)
+		
+
 	
-	def vsum_hist(self, show = True, lr = (0, 300), nbins=20, axis = 0):
+	def vsum_hist(self, show = True, v_window = (0,0), hist_lr = (0, 300), nbins=20, axis = 0):
 
 		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
 		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
@@ -629,6 +662,11 @@ class Sensor(object):
 		
 		input:
 		-show : if True, step through a pixel image of each event with a circle enclosing the region of interest.
+		-v_window : defaults to calculating voltage sum with l+k samples, starting at the event index. 
+		+/- values move the (left,right) fwd/bkwd
+		-hist_lr : sets the (left,right) bounds for the histogram
+		-nbins : number of bins for histogram
+		-axis : supply axis to plot to, or don't supply an axis and generate standalone plot.
 		'''
 
 		ring = [] # contains info for each as a tuple so we can easily print later.
@@ -640,17 +678,20 @@ class Sensor(object):
 			
 			# retrieve a list of pixels defining the region of interest for this event.
 			sel = ev.retrieve_selection()
+
 			# we'll use generator-expressions over list comprehensions here since we
 			# don't need to store all the constituent values to be summed.
-			vsum = sum(self.pix[i].filt[j] for i in sel for j in range(ev.i, ev.i+self.trap_length)) 
+			vsum = sum(self.pix[i].filt[j] for i in sel for j in range(ev.i + v_window[0], ev.i+Pixel.l+Pixel.k+v_window[1]))
+
 			#vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
 			#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
+			
 			self.alphaE.append(vsum)
-			ring.append((ev.i+self.trap_length/2, ev.x, ev.y, ev.r, vsum))
+			ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
 
 
 		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(x=self.alphaE, bins=nbins, range=lr)
+			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr)
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -661,7 +702,7 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 			fig = plt.figure(1)
 			axis = fig.add_subplot(111)
-			axis.hist(x=self.alphaE, bins=nbins, range=lr)
+			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr)
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -1047,7 +1088,7 @@ class Sensor(object):
 		fig = plt.figure()
 		ax = fig.add_subplot(111)
 		ax.set_title("multich plot")
-
+		ax.set_xlim(lr)
 		# ax.step(x, np.zeros(datalen))
 
 		fig.show()
@@ -1058,6 +1099,7 @@ class Sensor(object):
 			
 			fig2 = plt.figure()
 			ax2 = fig2.add_subplot(111)
+			ax2.set_xlim(lr)
 			# ax2.step(x, np.zeros(datalen))
 			fig2.show()
 			#ax2.figure.canvas.draw()
@@ -1085,15 +1127,18 @@ class Sensor(object):
 				if avg :
 					ax.step(x, np.ones(datalen)*self.pix[i].avg, color = 'y')
 
+				# take peak objects only inside of the window we are plotting, determined by 'lr' tuple
+				peaks = [j for j in self.pix[i].peaks if (j.index < lr[1] and j.index > lr[0])]
+
 				if pk :
-					peak_indices = [j.index for j in self.pix[i].peaks]
+					peak_indices = [j.index for j in peaks]
 					ax.scatter(peak_indices, self.pix[i].data[peak_indices], color='r', marker ='x')
 
 				if fit :
 					# impose a scatter plot for each fitted peak onto the raw data.
-					for j in range(self.pix[i].npk) :
-						ax.scatter(self.pix[i].peaks[j].fit_pts + self.pix[i].peaks[j].index, 
-							model_func(self.pix[i].peaks[j].fit_pts, *self.pix[i].peaks[j].fit_par), 
+					for j in peaks :
+						ax.scatter(j.fit_pts + j.index, 
+							model_func(j.fit_pts, *j.fit_par), 
 							marker='o', color = 'g')
 
 				# now plot the filtered data.		
@@ -1105,7 +1150,7 @@ class Sensor(object):
 				# superimpose peaks if desired.
 				if pk :
 					ax2.scatter(peak_indices, self.pix[i].filt[peak_indices], marker ='x', color='r')
-
+				
 				# ax is raw data, ax2 is filtered data.
 				ax.figure.canvas.draw()
 				ax2.figure.canvas.draw()
@@ -1440,8 +1485,8 @@ class Pixel(object):
 				self.peaks[j].chisq = chisq
 				
 				# uncomment these attributes to do plots of fits.
-				# self.peaks[j].fit_par = par
-				# self.peaks[j].fit_pts = xi
+				self.peaks[j].fit_par = par
+				self.peaks[j].fit_pts = xi
 				
 				# Q and p values.
 				# P[j] = pval
@@ -1456,7 +1501,7 @@ class Pixel(object):
 
 			self.peaks.pop()
 
-	def filter_peaks(self, step=False):
+	def filter_peaks(self, step=False, simple=False):
 
 		''' apply trapezoidal filter to data. peak locations are used to change
 		filter parameters.
@@ -1464,18 +1509,20 @@ class Pixel(object):
 		-step : if desired, filter a single step input (sets M = -1)
 		 '''
 
-		# no peaks found, use default M. 
-		
-		# alternatively: to do a simple analysis do NOT run
-		# peak_det or fit_pulses. this leaves npk initialized to 0 for every channel, so we just use default
-		# filtering for every channel.
-		if (self.npk == 0) : # no peaks found, use default M.
-			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
-				c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(Pixel.M_def), c_double(self.avg))
+		# no peaks found or if skipping peak detection and fitting ('simple' option), use default M. 
+		if (self.npk == 0 or simple == True) : # no peaks found, use default M.
+			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(Pixel.zero_pk), c_double(self.avg))
 
 		elif (self.npk == 1) : # one peak found.
+			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
+			k_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.k
+			M = np.array([i.tau for i in self.peaks])
+			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(Pixel.zero_pk), c_double(self.avg))
+			PEAK = peaks_handle(self.npk, LR[0], LR[1], l_arr, k_arr, M)
+
+
 			Pixel.shp_lib.shaper_single(self.data, self.filt, c_ulong(Pixel.daq_length), 
-				c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(self.peaks[0].tau), c_double(self.avg))
+			c_ulong(Pixel.l), c_ulong(Pixel.k), c_double(self.peaks[0].tau), c_double(self.avg))
 
 		elif (self.npk > 1) : # multiple peaks found.
 			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
@@ -1512,7 +1559,8 @@ class Pixel(object):
 		return:
 		- LEFT and RIGHT : beginning and end points for each set of 
 		trapezoidal filter parameters l,k, and M.'''
-	
+		
+
 		LEFT = np.zeros(self.npk)
 		RIGHT = np.zeros(self.npk)
 
