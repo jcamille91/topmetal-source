@@ -412,8 +412,12 @@ class Sensor(object):
 
 
 	def analyze(self, simple = False, select = [], step = False, noisethresh = 0.002,
-				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, # peak det
-			    fit_length = 300, fudge = 20,   	   			   				   # lsq fit
+				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
+			    
+			    fit_length = 300, fudge = 20, 											   # lsq fit
+			    bounds = ([0.0, 1.0/200, 0-0.3], [0.03, 1.0/10, 0+0.3]),	   			   # format: [min/max]
+			    guess = [0.008, 1.0/35, 0],						   				   		   # amplitude, 1/tau, offset
+			    
 			    l = 150, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
 
 		''' analysis chain: 
@@ -455,7 +459,11 @@ class Sensor(object):
 		 smaller space between the two consecutive peaks. In this case, 'fudge' many points 
 		 are removed from the end of the fit, to try and ensure the tail of the fit 
 		 does not catch the rise of the next peak.
-
+		-bounds : minimum and maximum values as possible fit values. specifying a reasonable range of
+		values can speed up the fit process. 
+		FORMAT: [(amplitude, 1/tau, offset)min, (amplitude, 1/tau, offset)max]
+		-guess: inital guess for exponential fit parameters. [amplitude, 1/tau, offset]
+ 
 		(trapezoidal filter)
 
 		-l, k, M : trapezoidal filter parameters. 
@@ -488,10 +496,14 @@ class Sensor(object):
 		Pixel.fudge = fudge
 		Pixel.fit_length = fit_length
 
+		# these get offset by each pixel's average voltage (baseline) when the pixel object is initialized.
+		Pixel.fit_bounds = bounds
+		Pixel.fit_guess = guess
+
 		Pixel.l = l # fixing l and k shaper parameters
 		Pixel.k = k
 		Pixel.M_def = M_def # default M is no peaks are found.
-		Pixel.shaper_offset = shaper_offset
+		Pixel.shaper_offset = shaper_offset # this should generally be negative
 
 		# let's define a peak object for a 'no peak' channel just once, so it can be reused.
 		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l
@@ -917,30 +929,30 @@ class Sensor(object):
 			axis.grid(True)
 			fig.show()
 
-	def tau_hist(self, nbins = 10000, begin = -0.03, end = 0.03, axis=0) :
+	def tau_hist(self, nbins = 100, lr=(0,120), bad = (100,2), axis=0) :
 		''' generate a histogram with the range of tau values we are dealing with.
 		'''
-		# use numpy.ravel() for 1d view of 2d array.
-		# use numpy.flatten() for 1d copy of 2d array.
-		filt1d = self.filt.ravel() 
-
+		# all detected M values
+		M = [pk.tau for px in self.pix for pk in px.peaks]
+		# weird M values getting hung up on 100
+		self.Mbad = [(px.number, pk.index, pk.tau) for px in self.pix for pk in px.peaks if pk.tau < bad[0]+bad[1] and pk.tau > bad[0]-bad[1]]
 		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(filt1d, nbins)
+			axis.hist(M, nbins)
 			axis.set_xlabel('Volts RMS')
 			axis.set_ylabel('# of channels (5181 total)')
 			axis.set_title('Sensor Noise')
-			axis.set_xlim(begin, end) # x limits, y limits
+			axis.set_xlim(lr) # x limits, y limits
 			#axis.set_ylim()
 			axis.grid(True)
 
 		else : 			# no axis supplied, make standalone plot.
 			fig = plt.figure(1)
 			axis = fig.add_subplot(111)
-			axis.hist(filt1d, nbins)
+			axis.hist(M, nbins)
 			axis.set_xlabel('Volts')
 			axis.set_ylabel('# of datapoints')
 			axis.set_title('filtered signal values')
-			axis.set_xlim(begin, end) # x limits, y limits
+			axis.set_xlim(lr) # x limits, y limits
 			#axis.set_ylim()
 			axis.grid(True)
 			fig.show()
@@ -1318,6 +1330,17 @@ class Pixel(object):
 		self.fit_par = None
 		self.fit_pts = None
 
+
+		# offset the 'off' fit search parameters and initial guess by the baseline of the signal.
+		#  PARAMETER FORMAT: [A, l, off] (min,max)
+		self.bounds = Pixel.fit_bounds
+		self.guess = Pixel.fit_guess
+
+		self.bounds[0][2] += self.avg
+		self.bounds[1][2] += self.avg
+		self.guess[2] += self.avg
+
+
 		self.npk = -1 
 
 
@@ -1400,10 +1423,12 @@ class Pixel(object):
 
 		# use the 'trig' namedtuple for debugging / accessing each step of the peak detection.
 		#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
-		
+
+		# pull these out for debugging if desired.
+		#self.prepeak = pk
+		#self.toss = toss
+
 		# create a list of 'Peak' objects with these peak locations.
-		self.prepeak = pk
-		self.toss = toss
 		self.peaks = [Peak(i) for i in pkm]
 		self.npk = len(self.peaks)
 
@@ -1439,7 +1464,7 @@ class Pixel(object):
 
 			# 			   PARAMETER FORMAT: ([A, l, off]
 			#				 MIN 								MAX
-			bounds = ([0.0, 1.0/100, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
+			bounds = ([0.0, 1.0/400, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
 			guess = [0.008, 1.0/35, self.avg]
 
 			# include a 'fake' peak to act as endpoint for last iteration.
