@@ -415,8 +415,8 @@ class Sensor(object):
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
 			    
 			    fit_length = 300, fudge = 20, 											   # lsq fit
-			    bounds = ([0.0, 1.0/200, 0-0.3], [0.03, 1.0/10, 0+0.3]),	   			   # format: [min/max]
-			    guess = [0.008, 1.0/35, 0],						   				   		   # amplitude, 1/tau, offset
+			    bounds = np.array(([0.0, 1.0/200, 0-0.3], [0.03, 1.0, 0+0.3])),	   			   	   # format: [min/max]
+			    guess = np.array([0.008, 1.0/35, 0]),						   				   		   # amplitude, 1/tau, offset
 			    
 			    l = 150, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
 
@@ -1329,18 +1329,6 @@ class Pixel(object):
 		self.chisq = None
 		self.fit_par = None
 		self.fit_pts = None
-
-
-		# offset the 'off' fit search parameters and initial guess by the baseline of the signal.
-		#  PARAMETER FORMAT: [A, l, off] (min,max)
-		self.bounds = Pixel.fit_bounds
-		self.guess = Pixel.fit_guess
-
-		self.bounds[0][2] += self.avg
-		self.bounds[1][2] += self.avg
-		self.guess[2] += self.avg
-
-
 		self.npk = -1 
 
 
@@ -1455,6 +1443,7 @@ class Pixel(object):
 		# a list with items returns 'True'. An empty list returns 'False'.
 		if self.peaks :
 
+
 			# if the last peak is too close to the end of the dataset, we won't try to fit it.
 			if (Pixel.daq_length - self.peaks[self.npk-1].index < Pixel.fit_length + Pixel.fudge) :
 				self.peaks.pop()
@@ -1462,10 +1451,12 @@ class Pixel(object):
 			# assumption: data is modeled by a 3 parameter decaying exponential.
 			M = 3
 
-			# 			   PARAMETER FORMAT: ([A, l, off]
-			#				 MIN 								MAX
-			bounds = ([0.0, 1.0/400, self.avg-0.3], [0.03, 1.0/10, self.avg+0.3])
-			guess = [0.008, 1.0/35, self.avg]
+			# offset the fit parameters by the baseline of the signal
+
+			self.bounds = Pixel.fit_bounds + np.array(([0,0,self.avg],[0,0,self.avg]))
+			self.guess = Pixel.fit_guess + np.array([0,0,self.avg])
+
+
 
 			# include a 'fake' peak to act as endpoint for last iteration.
 			self.peaks.append(Peak(Pixel.daq_length-1))
@@ -1493,9 +1484,9 @@ class Pixel(object):
 					# 	             sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
 					# 	             bounds=bounds, method='trf')
 
-				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=guess, \
+				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=self.guess, \
 					             sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
-					             bounds=bounds, method='trf')
+					             bounds=self.bounds, method='trf')
 
 				# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, \
 				# 		             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
@@ -1511,7 +1502,7 @@ class Pixel(object):
 				self.peaks[j].tau = 1.0/par[1]
 				self.peaks[j].chisq = chisq
 				
-				# uncomment these attributes to do plots of fits.
+				# these attributes can be saved to plot fits.
 				self.peaks[j].fit_par = par
 				self.peaks[j].fit_pts = xi
 				
@@ -1671,6 +1662,7 @@ class Event(object):
 		-y : a tuple with (top,bottom) points
 
 		'''
+		#self.row is set when we label all of the events, in Sensor.label_events()
 		self.r = r
 		self.x = x
 		self.y = y
