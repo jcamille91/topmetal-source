@@ -343,12 +343,12 @@ class Sensor(object):
 			# specify M=tau, peak location, amplitude, and the number of points to define
 			# the peak.
 			
-			# M_i = np.array([40], dtype=np.float64)
-			# M_loc = np.array([5000])
-			# M_a = np.array([0.015])
-			M_i = np.array([40, 20, 30, 50], dtype=np.float64)
-			M_loc = np.array([1000, 3000, 5000, 8000])
-			M_a = np.array([0.02, 0.015, 0.011, 0.015])
+			M_i = np.array([40], dtype=np.float64)
+			M_loc = np.array([5000])
+			M_a = np.array([4.8])
+			# M_i = np.array([40, 20, 30, 50], dtype=np.float64)
+			# M_loc = np.array([1000, 3000, 5000, 8000])
+			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
 			npk = len(M_i)
 			M_npt = 1000 # number of points defining pulse
 
@@ -366,6 +366,21 @@ class Sensor(object):
 			step[int(self.daq_length/2):] += height # transition point
 			
 			signal = step + noise
+
+		elif choose == 'trap' :
+			trap = np.zeros(self.daq_length)
+			A = 4.8
+			l=60
+			k=20
+			loc = 3000
+			stepsize = 4.8/20
+			for i in range(k):
+				trap[loc+i] = i*stepsize
+			trap[loc+k:loc+l-1]=A
+			for i in range(k):
+				trap[loc+l-1+i] = A-stepsize*i
+			signal = trap + noise
+
 
 		else :
 			print("unrecognized input, set 'choose' to either 'exp' or 'step' to generate the desired signal")
@@ -415,10 +430,10 @@ class Sensor(object):
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
 			    
 			    fit_length = 300, fudge = 20, 											   # lsq fit
-			    bounds = np.array(([0.0, 1.0/200, 0-0.3], [0.03, 1.0, 0+0.3])),	   			   	   # format: [min/max]
-			    guess = np.array([0.008, 1.0/35, 0]),						   				   		   # amplitude, 1/tau, offset
+			    bounds = ([0.0, 1.0/200, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
+			    guess = [0.008, 1.0/35, 0],						   				   		   # amplitude, 1/tau, offset
 			    
-			    l = 150, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
+			    l = 60, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
 
 		''' analysis chain: 
 		1. find peaks 
@@ -497,8 +512,8 @@ class Sensor(object):
 		Pixel.fit_length = fit_length
 
 		# these get offset by each pixel's average voltage (baseline) when the pixel object is initialized.
-		Pixel.fit_bounds = bounds
-		Pixel.fit_guess = guess
+		Pixel.fit_bounds = np.array(bounds)
+		Pixel.fit_guess = np.array(guess)
 
 		Pixel.l = l # fixing l and k shaper parameters
 		Pixel.k = k
@@ -551,6 +566,14 @@ class Sensor(object):
 				self.pix[i].peak_det()
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
+		
+		rd = input('reform data? enter ''yes/no''.')
+		if rd =='yes' :
+			self.reform_data()
+			print('data not reformed into %i x %i array in Sensor object.')
+		else :
+			print('data not reformed into %i x %i array in Sensor object.')
+
 
 	def label_events(self):
 
@@ -929,33 +952,87 @@ class Sensor(object):
 			axis.grid(True)
 			fig.show()
 
-	def tau_hist(self, nbins = 100, lr=(0,120), bad = (100,2), axis=0) :
-		''' generate a histogram with the range of tau values we are dealing with.
+	def fit_hist(self, nbins = [100,100,100,100], hlr=[], plr=[(0,120), (0,300), (0,400), (0,1)],  axis=0) :
+		''' 
+		generate a histogram with the range of fit parameter values we are dealing with.
+
+		input:
+		### for nbins and lr, each is a 4 element list.
+		so [0]=M [1]=A [2]=OFF [3]=XSQ 
+		-nbins : number of bins for histogram. 
+		-plr : left and right xlimits for plot.
+		-hlr : lef and right bounds for histogram bins.
+
+		return:
+		a tuple containing numpy arrays (M,A,OFF,XSQ)
 		'''
-		# all detected M values
-		M = [pk.tau for px in self.pix for pk in px.peaks]
-		# weird M values getting hung up on 100
-		self.Mbad = [(px.number, pk.index, pk.tau) for px in self.pix for pk in px.peaks if pk.tau < bad[0]+bad[1] and pk.tau > bad[0]-bad[1]]
+
+		# all detected amplitude, M, and offset values
+		M = np.array([pk.tau for px in self.pix for pk in px.peaks])
+		A = np.array([pk.fit_par[0] for px in self.pix for pk in px.peaks])
+		OFF = np.array([pk.fit_par[2]-px.avg for px in self.pix for pk in px.peaks]) # remove baseline "px.avg" to get true offset.
+		XSQ = np.array([pk.chisq for px in self.pix for pk in px.peaks])
+		# algorithm to pick out M values and along with their channel.
+		# self.Mbad = [(px.number, pk.index, pk.tau) for px in self.pix for pk in px.peaks if pk.tau < something and pk.tau > somethingelse]
+		
+		print(len(M), 'peaks detected.')
+
+
+		# note: pyplot histogram function 'axis.hist' or 'pyplot.hist' 
+		# calls the numpy histogram function to generate it's plot.
+
 		if isinstance(axis, ax_obj) : # axis supplied
 			axis.hist(M, nbins)
-			axis.set_xlabel('Volts RMS')
-			axis.set_ylabel('# of channels (5181 total)')
-			axis.set_title('Sensor Noise')
-			axis.set_xlim(lr) # x limits, y limits
+			axis.set_xlabel('M = # of time samples')
+			axis.set_ylabel('# of peaks')
+			axis.set_title('tau histogram')
+			axis.set_xlim(plr[0]) # x limits, y limits
 			#axis.set_ylim()
 			axis.grid(True)
 
 		else : 			# no axis supplied, make standalone plot.
-			fig = plt.figure(1)
-			axis = fig.add_subplot(111)
-			axis.hist(M, nbins)
-			axis.set_xlabel('Volts')
-			axis.set_ylabel('# of datapoints')
-			axis.set_title('filtered signal values')
-			axis.set_xlim(lr) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
+			fig,ax = plt.subplots(1,1)
+			ax.hist(M, nbins[0])
+			ax.set_xlabel('M, # of time samples')
+			ax.set_ylabel('# of peaks')
+			ax.set_title('tau histogram')
+			ax.set_xlim(plr[0]) # x limits, y limits
+			#ax.set_ylim()
+			ax.grid(True)
+
+			fig2,ax2 = plt.subplots(1,1)
+			ax2.hist(A*1e3, nbins[1])
+			ax2.set_xlabel('milli-volts')
+			ax2.set_ylabel('# of peaks')
+			ax2.set_title('amplitude histogram')
+			#ax2.set_xlim(plr[1]) # x limits, y limits
+			#ax2.set_ylim()
+			ax2.grid(True)
+
+			fig3,ax3 = plt.subplots(1,1)
+			ax3.hist(OFF*1e3, nbins[2])
+			ax3.set_xlabel('milli-volts')
+			ax3.set_ylabel('# of peaks')
+			ax3.set_title('voltage offset histogram')
+			#ax3.set_xlim(plr[2]) # x limits, y limits
+			#ax3.set_ylim()
+			ax3.grid(True)
+
+			fig4,ax4 = plt.subplots(1,1)
+			ax4.hist(XSQ, nbins[3])
+			ax4.set_xlabel('chi-square values')
+			ax4.set_ylabel('# of peaks')
+			ax4.set_title('least square chi square')
+			#ax4.set_xlim(plr[3]) # x limits, y limits
+			#ax4.set_ylim()
+			ax4.grid(True)
+
 			fig.show()
+			fig2.show()
+			fig3.show()
+			fig4.show()
+
+			return (M,A,OFF,XSQ)
 
 	def reform_data(self) :
 		'''
@@ -963,7 +1040,10 @@ class Sensor(object):
 		filtered result, we can slam it all into one big 
 		two-dimensional array for making 2d pixellated images.
 		'''
+		# self.filt = np.array([i.filt for i in self.pix])
 
+		# always iterating over the total number of channels preserves shape of 2d array in the
+		# case that we only analyze a few channels, but still want to use functions that depend on self.row
 		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
 
 	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = 0, vmax = 0.007) :
@@ -998,7 +1078,7 @@ class Sensor(object):
 		fig.show()
 		im.axes.figure.canvas.draw()
 
-		# quickly stream a series of images
+		# stream a series of images without user input
 		if not stepthru :
 
 			#tstart = time.time()
@@ -1593,6 +1673,19 @@ class Pixel(object):
 		RIGHT = np.array(RIGHT, dtype = c_ulong)
 
 		return (LEFT, RIGHT)
+
+	def calc_urs(self, npt_avg, avg_off):
+		'''
+		for every detected peak in the list of Peak objects, calculate the undershoot of the filtered data.
+		
+		input:
+		-npt_avg : number of points used to average the flat top against
+		the space after the trapezoidal response.
+		-avg_ft_off : number of points after the peak to average the flat top. 
+		this is in addition to k, the rise time of the trapezoidal response.
+		'''
+
+		a='dosomething'
 
 	def plot(self, choose, axis = 0, lr = None) :
 		''' 
