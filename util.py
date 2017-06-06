@@ -567,12 +567,12 @@ class Sensor(object):
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
 		
-		rd = input('reform data? enter ''yes/no''.')
+		rd = input('reform data? enter ''yes/no''. \n')
 		if rd =='yes' :
 			self.reform_data()
-			print('data not reformed into %i x %i array in Sensor object.')
+			print('Data reformed into Sensor.filt : %i x %i numpy array.' % (self.nch, self.daq_length))
 		else :
-			print('data not reformed into %i x %i array in Sensor object.')
+			print('Data not reformed.')
 
 
 	def label_events(self):
@@ -685,9 +685,72 @@ class Sensor(object):
 		# sum on 'n' 'from 0 to k' ramp summation, twice for up and down slopes.
 		ramp = 2*(A/Pixel.k)*(Pixel.k*(Pixel.k+1)/2)
 		
+	def vsum_all(self, nbins = 100, start=0, stop=None, use_events=True, nframe=None, axis=0):
+		'''
+		function to do voltage summations over event windows of all 5184 pixels.
 
-	
-	def vsum_hist(self, show = True, v_window = (0,0), hist_lr = (0, 300), nbins=20, axis = 0):
+		input:
+		-start : location in dataset to start, defaults to 0.
+		-nframe : number of frames to sum over the filtered data. defaults 
+		to length of the trapezoidal filter response (l+k)
+
+		''' 
+
+		if not stop:
+			stop = self.daq_length
+
+
+		# use default l+k as the window, aka the filter length.
+		if use_events :
+			self.vsum=[]
+			for ev in self.alpha_events : 
+				values = np.sum(self.filt[:,ev.i:ev.i+Pixel.l+Pixel.k])
+				self.vsum.append(values)
+
+
+		elif not nframe :
+			nframe = Pixel.l + Pixel.k
+			nevent = int((stop-start)/(nframe))
+			self.vsum = np.zeros(nevent)
+
+			for e in range(nevent) :
+				i = start + nframe*e
+				values = np.sum(self.filt[:,i:i+nframe]) # all 5184 pixels' data points inside the event window.
+				self.vsum[e] = np.sum(values)
+
+		else :
+			nevent = int((stop-start)/(nframe))
+			self.vsum = np.zeros(nevent)
+
+			for e in range(nevent) :
+				i = start + nframe*e
+				values = np.sum(self.filt[:,i:i+nframe]) # all 5184 pixels' data points inside the event window.
+				self.vsum[e] = np.sum(values)
+
+		print(len(self.alpha_events),'events, each summed over', Pixel.l+Pixel.k, 'frames')
+
+		if isinstance(axis, ax_obj) : # axis supplied
+			axis.hist(x=self.vsum, bins=nbins)
+			axis.set_xlabel('Volts')
+			axis.set_ylabel('counts')
+			axis.set_title('alpha energy spectrum')
+			#axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+
+		else : 			# no axis supplied, make standalone plot.
+			fig, axis = plt.subplots(1,1)
+			axis.hist(x=self.vsum, bins=nbins)
+			axis.set_xlabel('Volts')
+			axis.set_ylabel('counts')
+			axis.set_title('alpha energy spectrum')
+			#axis.set_xlim(begin, end) # x limits, y limits
+			#axis.set_ylim()
+			axis.grid(True)
+			fig.show()	 
+
+
+	def vsum_select(self, show = False, nfake=100, v_window = (0,0), hist_lr = [(0, 300), (-100,100)], nbins=[20,20], axis = 0):
 
 		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
 		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
@@ -711,14 +774,15 @@ class Sensor(object):
 
 		# get location for every event. get selection of pixels based on this location for 
 		# each event. store the voltage summation for histogram.
+
 		for ev in self.alpha_events :
 			
 			# retrieve a list of pixels defining the region of interest for this event.
-			sel = ev.retrieve_selection()
+			ev.retrieve_selection()
 
 			# we'll use generator-expressions over list comprehensions here since we
 			# don't need to store all the constituent values to be summed.
-			vsum = sum(self.pix[i].filt[j] for i in sel for j in range(ev.i + v_window[0], ev.i+Pixel.l+Pixel.k+v_window[1]))
+			vsum = sum(self.pix[i].filt[j] for i in ev.sel for j in range(ev.i + v_window[0], ev.i+Pixel.l+Pixel.k+v_window[1]))
 
 			#vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
 			#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
@@ -727,8 +791,30 @@ class Sensor(object):
 			ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
 
 
+		# create some fake/random selections to observe the zero 'noise' peak in the energy spectrum.
+		fake_ring  = []
+		self.fake_ev=[]
+		self.fake_E =[]
+		for k in range(nfake) :
+			x,y = np.random.randint(10,61,size=2)
+			i = np.random.randint(0,self.daq_length-(Pixel.l+Pixel.l))
+			self.fake_ev.append(Event(x=x, y=y, r=10, i=i, shape='c'))
+
+					
+
+		for f in self.fake_ev :
+			
+			f.retrieve_selection()
+			vsum = sum(self.pix[i].filt[j] for i in f.sel for j in range(f.i + v_window[0], f.i+Pixel.l+Pixel.k+v_window[1]))			
+			self.fake_E.append(vsum)
+			fake_ring.append((f.i+(Pixel.l+Pixel.k)/2, f.x, f.y, f.r, vsum))
+
+
+
+		# plot histograms for energy spectrum
+
 		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr)
+			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr[0])
 			axis.set_xlabel('Volts, summed over event pixels and frames')
 			axis.set_ylabel('counts')
 			axis.set_title('alpha energy spectrum')
@@ -737,16 +823,25 @@ class Sensor(object):
 			axis.grid(True)
 
 		else : 			# no axis supplied, make standalone plot.
-			fig = plt.figure(1)
-			axis = fig.add_subplot(111)
-			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr)
-			axis.set_xlabel('Volts, summed over event pixels and frames')
-			axis.set_ylabel('counts')
-			axis.set_title('alpha energy spectrum')
-			#axis.set_xlim(begin, end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-			fig.show()	 
+			fig, ax = plt.subplots(1,1)
+			ax.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
+			ax.set_xlabel('Volts, summed over event pixels and frames')
+			ax.set_ylabel('counts')
+			ax.set_title('alpha energy spectrum')
+			#ax.set_xlim(begin, end) # x limits, y limits
+			#ax.set_ylim()
+			ax.grid(True)
+			fig.show()
+
+			fig2, ax2 = plt.subplots(1,1)
+			ax2.hist(x=self.fake_E, bins=nbins[1], range=hist_lr[1])
+			ax2.set_xlabel('Volts, summed over event pixels and frames')
+			ax2.set_ylabel('counts')
+			ax2.set_title('alpha energy spectrum')
+			#ax2.set_xlim(begin, end) # x limits, y limits
+			#ax2.set_ylim()
+			ax2.grid(True)
+			fig2.show()		 
 
 		# show the region of interest (possible event)
 		# use this to verify we are taking data from desired channels.
@@ -757,18 +852,18 @@ class Sensor(object):
 		# show the the middle most frame of events of interest.
 		if show :
 
-			fig2, ax2 = plt.subplots(1,1)
+			fig3, ax3 = plt.subplots(1,1)
 
 			# p is a tuple (midpoint, x, y, r)
 			for p in ring:
 				input("press enter to show next event:")	
-				ax2.cla()
-				ax2.set_title('frame=%i coordinate=(%i, %i) radius=%i vsum = %fV' % p)
-				self.pixelate_single(sample = int(p[0]), arr=[], axis = ax2)
+				ax3.cla()
+				ax3.set_title('frame=%i coordinate=(%i, %i) radius=%i vsum = %fV' % p)
+				self.pixelate_single(sample = int(p[0]), arr=[], axis = ax3)
 				# add a circle 'artist' to the event we are analyzing
 				circ = plt.Circle((p[1], p[2]), p[3], color = 'r', fill=False, linewidth = 1.5, alpha=1)
-				ax2.add_artist(circ)
-				fig2.show()
+				ax3.add_artist(circ)
+				fig3.show()
 
 	def select_ellipse(self, x, y, a, b, angle) :
 
@@ -1066,6 +1161,7 @@ class Sensor(object):
 		# get the data into (72 x 72 x npt) array
 		data_2d = np.zeros((self.row, self.row, nplot))
 
+		# load all of the data before plotting, so it can be accessed quickly.
 		for i in range(nplot) :
 			data_2d[:,:,i] = np.reshape(self.filt[:,a[i]], (self.row,-1)) # convert to square matrix
 
@@ -1103,14 +1199,13 @@ class Sensor(object):
 		# close the figure
 		plt.close(fig)
 
-	def pixelate_single(self, sample, arr = [], vmin=-0.001, vmax=0.007, axis = 0):
+	def pixelate_single(self, sample, values = [], vmin=-0.001, vmax=0.007, axis = 0):
 		''' Take 5184 channel x 25890 data point array and plot desired points in
 		time as 5184 pixel array.
 		
 		input:
 		-sample : desired point in sample space to plot 0-25889
-		-arr : input array of length (self.row)**2 to plot.
-		can use this for quick tests.
+		-values : input pixels to show.
 		-vmin , vmax : minimum and maximum values for the colormap.
 		-axis: supply an axis to impose this pixel plot to that axis.
 		if no axis is supplied (default), then the function generates a standalone image.
@@ -1120,13 +1215,15 @@ class Sensor(object):
 		if isinstance(axis, ax_obj) :
 
 			# default case, plot data by specifying sample in dataset.
-			if not len(arr) :
+			if not len(values) :
 				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
 				im = axis.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			
-			# if array is input, plot this image instead.
+			# if 'values' is input, display these pixels
 			else :
+				arr = np.zeros(self.row**2)
+				arr[values] = 1
 				data_2d = np.reshape(arr, (self.row, -1))
 				im = axis.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			axis.grid(True)
@@ -1135,13 +1232,15 @@ class Sensor(object):
 			fig, ax = plt.subplots()
 
 			# default case, plot data by specifying sample in dataset.
-			if not len(arr) :
+			if not len(values) :
 				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
 				im = ax.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			
 			# if array is input, plot this image instead.
 			else :
+				arr = np.zeros(self.row**2)
+				arr[values] = 1
 				data_2d = np.reshape(arr, (self.row, -1))
 				im = ax.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 		
@@ -1734,7 +1833,7 @@ class Peak(object):
 		# self.chisq = None
 
 class Event(object):
-
+	row = 72
 	def __init__(self, x, y, i, r=None, a=None, b=None, angle=None, shape='c'):
 		'''
 		input: behave differently for different shape strings, read below.
@@ -1747,32 +1846,36 @@ class Event(object):
 		-x,y : ints representing center of ellipse
 		-a,b : length of major and minor axis. whichever is larger
 		is automatically used as the major axis.
-		-angle : angle of rotation from the positive axis being 0 degrees,
-		increasing counter-clockwise
+		-angle : angle of rotation (in degrees) from the x axis being 0 degrees.
+		when angle rolls over 90, it doesn't work very well, use this method:
+		0 -> 90 rotates the ellipse counter clockwise (starting lying horizontally)
+		0 -> -90 rotates the ellipse clockwise (starting lying horizontally)
 
 		shape == 'r' (rectangle)
-		-x : a tuple with (left,right) points
-		-y : a tuple with (top,bottom) points
+		-x : a tuple with (left, right) points
+		-y : a tuple with (top, bottom) points
 
 		'''
+		#self.npix is set after pixels from selection are retrieved.
 		#self.row is set when we label all of the events, in Sensor.label_events()
 		self.r = r
 		self.x = x
 		self.y = y
 		self.a = a
 		self.b = b
-		self.angle = angle
+		self.angle = angle * np.pi/180 # convert degree to radians
 		self.i = i
 		self.shape = shape
+
 
 	def retrieve_selection(self) :
 
 		if self.shape == 'c' :
-			return self.circle()
+			self.circle()
 		elif self.shape == 'r' :
-			return self.rectangle()
+			self.rectangle()
 		elif self.shape == 'e' :
-			return self.ellipse()
+			self.ellipse()
 
 	def ellipse(self) :
 
@@ -1806,11 +1909,13 @@ class Event(object):
 		rect = [((i, j), i+j*self.row) for j in range(self.y-major, self.y+major) for i in range(self.x-major,self.x+major)]
 
 		# cut out the ellipse. this is just an ellipse distance equation with an angle included..
-		selection = [rect[i][1] for i in range(len(rect)) if \
+		self.sel = np.array([rect[i][1] for i in range(len(rect)) if \
 		(((((rect[i][0][0]-self.x)*cos+(rect[i][0][1]-self.y)*sin2)**2)/a2) + \
-		((((rect[i][0][0]-self.x)*sin-(rect[i][0][1]-self.y)*cos2)**2)/b2)) < 1]
+		((((rect[i][0][0]-self.x)*sin-(rect[i][0][1]-self.y)*cos2)**2)/b2)) < 1])
 
-		return selection
+		self.npix = len(self.sel)
+
+
 
 	def circle(self) :
 
@@ -1821,12 +1926,11 @@ class Event(object):
 		# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
 		#xy = [(self.pix[i].loc, i) for i in rectangle]
 		# if the element is inside of the circle's radius, include it. We're cutting a circle out of a rectangle
-		selection = [rect[i][1] for i in range(len(rect)) if np.sqrt((rect[i][0][0]-self.x)**2 + (rect[i][0][1]-self.y)**2) < self.r]
+		self.sel = np.array([rect[i][1] for i in range(len(rect)) if np.sqrt((rect[i][0][0]-self.x)**2 + (rect[i][0][1]-self.y)**2) < self.r])
 		
-		return selection
+		self.npix = len(self.sel)
 
-		# retrieve all voltage values for the selected pixels and frames.
-		# values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
+
 	def rectangle(self) :
 
 		'''make a rectangular selection of pixels.
@@ -1835,47 +1939,8 @@ class Event(object):
 		-tb : the top and bottom most points as a two element list.
 
 		'''
-
-		return [i+j*self.row for j in range(self.y[0], self.y[1]) for i in range(self.x[0], self.x[1])]
-
-
-def get_wfm_one(infile, ch, npt, plt) :
-
-	''' get data for a channel and calculate its average and root mean square. 
-	npt defaults to max value (25890 for current dataset) for zero input or too large of input.'''
-	data = pull_one(infile, ch)
-
-	avg = np.mean(data[:npt])
-	rms = np.std(data[:npt])
-
-	if plt == True :
-		print('average = ', avg, 'Volts')
-		print('sigma = ', rms, 'Volts RMS')
-		plotter(data)
-
-
-	return wfm(avg=avg, rms=rms, data=data)
-
-def get_wfm_all(infile, npt) :
-
-	''' get data for 72*72 sensor and calculate each channel's average and root mean square voltage. 
-	npt defaults to max value (25890 for current dataset) for zero input or too large of input.'''
-	dead = 3
-	nch = 72**2
-	avg = np.zeros(nch)
-	rms = np.zeros(nch)
-
-	data = pull_all(infile)
-	length = len(data[0])
-
-	if ((npt == False) or (npt > length)) :
-		print('set calculation length to raw data array length =', length)
-		npt = length
-	for i in range(dead,nch) : # leave channels 0-2 with avg = 0, rms = 0.
-		avg[i] = np.mean(data[i]) # they have no signal info, only for identifying demux
-		rms[i] = np.std(data[i]) # frames in demux algorithm.
-
-	return wfm(avg=avg, rms=rms, data=data)
+		self.sel = np.array([i+j*self.row for j in range(self.y[0], self.y[1]) for i in range(self.x[0], self.x[1])])
+		self.npix = len(self.sel)
 
 
 def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
@@ -1904,79 +1969,7 @@ def savgol_gsl(data, order, der, window):
 	ret = lib.savgol_np(data, filt, c_ulong(len(data)), c_int(order), c_int(der), c_int(window))
 	return np.array(filt)
 
-def get_peaks(data, mean, threshold, minsep, sgwin, sgorder):
 
-	''' 
-	input:
-	- data : numpy array with peaks to look for.
-	- mean: average value of 'data'.
-	- threshold : minimum acceptable value (volts) above the average signal level for a peak.
-	- minsep : minimum number of samples between peaks.  peaks closer than minsep are discarded.
-
-	*** sgwin and sgorder are filter parameters for smoothing the data with a savitsky-golay filter
-	before peak detection. derivative based peak detection on noisy signals requires smoothing. ***
-
-	- sgwin : window of savitsky-golay filter. smaller window picks up smaller features
-	and vice-versa. window is number of adjacent points for polynomial fitting.
-	- sgorder : order of savitsky-golay polynomial for fitting to data.
-	
-	return:
-	- pkm : return array of peak locations given as indices of the original input array 'data'.
-	- trig(optional) : namedtuple for testing each step of peak detection if desired.
-	'''
-
-	# sign = 1 does positive data with peaks, sign = -1 does negative data with valleys
-	sign = 1
-
-	# smooth data for peak detection. if using non-noisy/ideal/fake data, can skip this step.
-	filt = savgol_scipy(data, sgwin, sgorder)
-	Y = filt
-
-	# calculate derivative
-	kernel = [1, 0, -1]	
-	dY = convolve(Y, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
-	
-	# normalize derivative to one. three values/meanings: 1 is increasing, -1 is decreasing, 0 is constant.
-	S = np.sign(dY)
-	
-	# the second derivative of the normalized derivative.
-	# should only have non-zero values for peaks and valleys, where the value of the derivative changes.
-	ddS = convolve(S, kernel, 'valid')
-
-	# first, find all of the positive derivative values. going up the peak.
-	# this returns indices of possible candidates. we want to offset by two because
-	# the convolution cuts the array length by len(kernel)-1
-	if (sign == 1) :
-		candidates = np.where(dY > 0)[0] + (len(kernel)-1)
-	elif (sign == -1) :
-		candidates = np.where(dY < 0)[0] + (len(kernel)-1)
-
-	pk = sorted(set(candidates).intersection(np.where(ddS == -sign*2)[0] + 1))
-	alpha = mean + (sign * threshold)
-
-	if (sign == 1) :
-		pk = np.array(pk)[Y[pk] > alpha]
-	elif (sign == -1) :
-		pk = np.array(pk)[Y[pk] < alpha]
-
-	# remove peaks within the minimum separation... can do this smarter.
-	toss = np.array([])
-	for i in range(len(pk)-1) :
-		# if the peaks are closer than the minimum separation and the second peak is
-		# larger than the first, throw out the first peak. 
-		if ((pk[i+1]-pk[i]) < minsep) :
-		#if ((peaks[i+1]-peaks[i]) < minsep) and (Y[peaks[i+1]] < Y[peaks[i]]) :
-			toss = np.append(toss, i+1)
-
-	pkm = np.delete(pk, toss)
-
-	# cons = 5 # consecutively increasing values preceeding a peak
-	# for j in range(len(pkm))
-	# 	for k in range(cons)
-
-	# use the 'trig' namedtuple for debugging / accessing each step of the peak detection.
-	#return trig(mean=mean, dY=dY, S=S, ddS=ddS, cds=candidates, peaks=pk, toss=toss, pkm=pkm)
-	return pkm
 
 def fit_tau(data, avg, rms, peaks, fudge, fit_length, ax) :
 	'''
@@ -2158,46 +2151,6 @@ def savgol_scipy(data, npt, order):
 	out = savgol_filter(data, npt, order)
 	return out
 
-def peakdet_cwt(data, axis):
-   # do a first check for peaks in the dataset. After finding peaks, should create a list of 
-   # 'event' objects that will be modified as the data is further processed.
-   width = np.array([1,10,20,30,40,50])
-   candidates = find_peaks_cwt(data, width)	
-   axis.scatter(candidates, data[candidates], marker='o', color='r', s=40)
-
-   return candidates
-
-#def push(infile, pixel):
-
-def pull_one(infile, pixel):
-	''' retrieve signal data for a single pixel into a 1D numpy array.
-	input:
-	- infile : string specifying desired .h5/.hdf5 file to read.
-	- pixel : desired pixel to retrieve. choose 0-5183. (72**2 total)
-	'''
-
-	#infile = '../data_TM1x1/out22_dmux' # file for current dataset.
-	event = 'C0' # for current dataset, only single event and sensor.
-	channel = 0
-	with h5py.File(infile,'r') as hf: # open file for read
-		d = hf.get(event)
-		data = np.array(d, dtype=np.float64)
-	return data[pixel]
-
-def pull_all(infile):
-	
-	''' retrieve signal data for all 5184 pixels into 2D numpy array.
-	input:
-	- infile : string specifying desired .h5/.hdf5 file to read.
-	'''
-
-	event = 'C0' # for current dataset, only single event and sensor.
-	channel = 0
-	with h5py.File(infile,'r') as hf: # open file for read
-		d = hf.get(event)
-		data = np.array(d, dtype=np.float64)
-
-	return data
 
 def close_figs(): 
 	'''
@@ -2206,122 +2159,6 @@ def close_figs():
 
 	plt.close("all")
 
-def plot(data, axis):
-	''' 
-	1 dimensional 'step' plot.
-	inputs:
-	- data: 1D numpy array of data 
-	- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
-	 plot in ipython, supply 0 for axis to generate a standalone fig, axis plot.
-
-	'''
-	if isinstance(axis, ax_obj) :	# if an axis is supplied, plot to it.
-		axis.step(np.arange(len(data)), data)
-
-	else :	# no axis, make a quick standalone plot.
-		plt.step(np.arange(len(data)), data)
-		plt.show()
-
-def plot_multich(data, ch):
-	
-	'''
-	This function plots a series of channels to 
-	observe a trend or difference. In ipython, press enter to 
-	progess to the next channel.
-
-	input: 
-	- data : (5184 x wfm length) 2D numpy array with waveform data for sensor.
-	- ch : 1D numpy array of channels to be plotted. 
-	'''
-
-	nch = len(ch)
-	wfmlen = len(data[0])
-	x = np.arange(wfmlen)
-
-	fig = plt.figure()
-	ax = fig.add_subplot(111)
-	ax.set_title("testing plot")
-
-	ax.step(x, np.zeros(wfmlen))
-	fig.show()
-	ax.figure.canvas.draw()
-
-	for i in range(nch) :
-		input("press enter for next channel")
-		plt_ch = ch[i]
-		ax.cla()
-		ax.set_title("channel no. %i" % plt_ch)
-		ax.step(x, data[plt_ch])
-		ax.figure.canvas.draw()
-
-
-def hist_plot(data, nbins, end, axis) :
-	''' 
-	1 dimensional histogram plot.
-	inputs:
-	- data: 1D numpy array of data 
-	- nbins: number of desired bins.
-	- end: cutoff point for histogram x-axis
-	- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
-	 plot in ipython, supply 0 for axis to generate a standalone fig,axis plot.
-
-	'''
-	if isinstance(axis, ax_obj) : # axis supplied
-		axis.set_title("Sensor Noise Histogram")
-		axis.hist(data, nbins)
-		axis.set_xlabel('Volts RMS')
-		axis.set_ylabel('# of channels (5181 total)')
-		axis.set_title('Sensor Noise')
-		axis.set_xlim(0,end) # x limits, y limits
-		#axis.set_ylim()
-		axis.grid(True)
-
-	else : 			# no axis supplied, make standalone plot.
-		fig = plt.figure(1)
-		axis = fig.add_subplot(111)
-		axis.set_title("Sensor Noise Histogram")
-		axis.hist(data, nbins)
-		axis.set_xlabel('Volts RMS')
-		axis.set_ylabel('# of channels (5181 total)')
-		axis.set_title('Sensor Noise')
-		axis.set_xlim(0, end) # x limits, y limits
-		#axis.set_ylim()
-		axis.grid(True)
-		fig.show()
-
-def define_square(x, y, len):
-
-	''' define a square region of interest on the 2D pixel array.
-	input:
-	- x, y : cartesian coordinates of upper left corner of square of interest.
-	- len : length of side of the square
-	
-	return:
-	- array of channels inside of the square region of interest.
-	'''
-	row = 72 # sensor is a 72x72 square
-	
-	return roi
-def locate_pixel(x, y) :
-	''' Take x and y location of square pixel array and convert to location in linear 1D array
-	input:
-	- x, y : cartesian coordinates of pixel in square array.
-	'''
-	dim = 72
-	out=(y*72)+x
-	print(out)
-	return out
-
-def arr2square(data) :
-
-	''' reshape a 1D array into a set of rows and columns (2D array).
-	input:
-	- data : 1D array for reshaping. 'row' determines shape of square 2D array.
-	'''
-
-	row = 72 # for a 72x72 pixel array
-	data_2d = np.reshape(data, (row, -1)) # convert to square matrix
-	return data_2d
 
 def pixel_tri_value(data) :
 	''' provide 72X72 data array on channel status. 0 is a channel with no found peaks.
@@ -2380,108 +2217,8 @@ def pixel_status(data):
 	im.axes.figure.canvas.draw()
 
 
-def pixelate_single(data, sample):
-	''' Take 5184 channel x 25890 data point array and plot desired points in
-	time as 5184 pixel array.
-	input:
-	- data : 2D numpy array (5184 x 25890)
-	- sample : desired point in sample space to plot 0-25889
-	'''
-
-
-	# dark = min(data)
-	# bright = max(data)
-	timestep = (4*72**2)*(3.2*10**-8)
-	row = 72
-	data_2d = np.reshape(data[:,sample], (row, -1)) # convert to square matrix
-
-	fig, ax = plt.subplots()
-
-	# make bounds between -1 mV and 5 mV.
-	im = ax.imshow(data_2d, cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.005)
-	fig.colorbar(im)
-	ax.grid(True)
-	fig.show()
 
 
 
-def pixelate_multi(data, start, stop, stepsize):
-
-	''' plot successive pixelated images of the 72*72 sensor.
-	input:
-	- data : a (5184 x number of time samples) numpy array.
-	- start and stop : specify desired points in time to plot.
-	- stepsize : decides how many of the time points to plot. if '1',
-	all of the data is plotted. if '10' for example, each successive
-	10th point in time is plotted. stepsize must divide into integers. 
-	'''
-
-	sample_time = (4*72**2)*(3.2*10**-8)
-	row = 72
-	
-	a = np.arange(start, stop, stepsize)
-	npt = len(a)
-
-	# get the data into (72 x 72 x npt) array
-	data_2d = np.zeros((72, 72, npt))
-
-	for i in range(npt) :
-		data_2d[:,:,i] = np.reshape(data[:,a[i]], (row,-1)) # convert to square matrix
-
-
-	fig = plt.figure(1)
-	ax = fig.add_subplot(111)
-	ax.set_title("topmetal data")
-	
-	#im = ax.imshow(np.zeros((72,72)), cmap=cm.viridis, vmin=-0.001, vmax=0.015)
-	#im = ax.imshow(np.zeros((72,72)), cmap=cm.RdYlBu_r, vmin=-0.001, vmax=0.015)
-	im = ax.imshow(np.zeros((72,72)), cmap=cm.jet, vmin=0.0, vmax=0.007)
-	fig.show()
-	im.axes.figure.canvas.draw()
-
-	tstart = time.time()
-	for j in range(npt) :
-		t = j*stepsize*sample_time
-		ax.set_title("Time elapsed: %f seconds" % t)
-		im.set_data(data_2d[:,:,j])
-		im.axes.figure.canvas.draw()
-
-def text_dump(infile, pixel):
-	
-
-	''' outputs waveform values textually to the terminal command line
-	input:
-	- infile : string name for file to retrieve data from
-	- pixel : choose a pixel 0-5183 to dump waveform data
-	'''
-
-	event = 'C0'
-	channel = 0
-	nPix = 72**2
-	dump = 0
-
-	# open the file for read
-	with h5py.File(infile,'r') as hf:
-	   d = hf.get(event)
-	   data = np.array(d)
-
-	# choose channel and pixel 
-	chpix = (channel)*nPix + (pixel) # take ch 0-7, pixels 0-5183 (72**2 - 1)
-
-	samples = np.linspace(0, len(data[0])-1, len(data[0]))
-
-	for i in range(len(data[channel])):
-	   print(i, data[channel][i])
-
-
-def demuxD(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
-   lib = CDLL("demux_dbl.so")
-   lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
-   lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
-
-def demuxF(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
-   lib = CDLL("demux_flt.so")
-   lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
-   lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 
