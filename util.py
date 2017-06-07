@@ -426,7 +426,7 @@ class Sensor(object):
 
 
 
-	def analyze(self, simple = False, select = [], step = False, noisethresh = 0.002,
+	def analyze(self, read=False, simple = False, select = [], noisethresh = 0.002,
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
 			    
 			    fit_length = 300, fudge = 20, 											   # lsq fit
@@ -535,9 +535,11 @@ class Sensor(object):
 		print('shaping filter: l = %i, k = %i, \n default M = %i, offset = %i \n' % (l, k, M_def, shaper_offset))
 		input('press enter to analyze with given parameters')
 
-		if step : # filter pixel(s) containing a step input.
+
+		if read : # if we have read in a saved list of peaks for each channel, 
+				  # skip peak detection and fitting procedure.
 			for i in self.pix :
-				i.filter_peaks(step=True)
+				i.filter_peaks()
 
 		elif simple : # do simple analysis, filter everything with default l,k,M.
 			for i in self.pix :
@@ -660,6 +662,30 @@ class Sensor(object):
 
 		# ev = Event(27, 36, 8, 1800) #
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
+
+	def save_peaks(self, outfile) :
+
+		# get all lists of peak objects as a list with the same length as the number of channels 
+		peaks = [pix.peaks for pix in self.pix]
+
+		with open(outfile, 'wb') as output:
+			pickle.dump(peaks, output)
+
+	def read_peaks(self, infile) :
+
+		# retrieve list of each pixel's list of peak objects
+		with open(infile, 'rb') as read:
+			pk =  pickle.load(read)
+
+		if len(pk) == self.nch :
+
+			for i in range(self.nch):
+				self.pix[i].peaks = pk[i]
+
+		else :
+			print('number of lists of peaks:', len(peaks), 'does not match number of pixels:', self.nch)
+			print('cannot load peaks if these numbers do not match')
+
 
 	def cal_check(self, selection=[]) :
 		'''
@@ -827,7 +853,7 @@ class Sensor(object):
 			ax.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
 			ax.set_xlabel('Volts, summed over event pixels and frames')
 			ax.set_ylabel('counts')
-			ax.set_title('alpha energy spectrum')
+			ax.set_title('alpha energy peak')
 			#ax.set_xlim(begin, end) # x limits, y limits
 			#ax.set_ylim()
 			ax.grid(True)
@@ -837,7 +863,7 @@ class Sensor(object):
 			ax2.hist(x=self.fake_E, bins=nbins[1], range=hist_lr[1])
 			ax2.set_xlabel('Volts, summed over event pixels and frames')
 			ax2.set_ylabel('counts')
-			ax2.set_title('alpha energy spectrum')
+			ax2.set_title('sensor noise "zero peak"')
 			#ax2.set_xlim(begin, end) # x limits, y limits
 			#ax2.set_ylim()
 			ax2.grid(True)
@@ -1500,7 +1526,8 @@ class Pixel(object):
 		self.number = number
 		self.loc = (number % Pixel.row, int(number/Pixel.row))
 		self.data = data
-		self.filt = np.empty_like(data)
+		self.filt = np.empty_like(data) # it's nice to initialize here, because if we only do operations on some channels,
+		# having an array for every pixel will preserve the square shape of the array if we want to reform data anyways.
 		self.avg = avg
 		self.rms = rms
 		self.peaks = []
@@ -1508,7 +1535,6 @@ class Pixel(object):
 		self.chisq = None
 		self.fit_par = None
 		self.fit_pts = None
-		self.npk = -1 
 
 
 		# if (self.rms > Pixel.noisethresh) :
@@ -1597,7 +1623,6 @@ class Pixel(object):
 
 		# create a list of 'Peak' objects with these peak locations.
 		self.peaks = [Peak(i) for i in pkm]
-		self.npk = len(self.peaks)
 
 	def fit_pulses(self):
 		'''
@@ -1622,11 +1647,12 @@ class Pixel(object):
 		# a list with items returns 'True'. An empty list returns 'False'.
 		if self.peaks :
 
+			npk = len(self.peaks)
 
 			# if the last peak is too close to the end of the dataset, we won't try to fit it.
-			if (Pixel.daq_length - self.peaks[self.npk-1].index < Pixel.fit_length + Pixel.fudge) :
+			if (Pixel.daq_length - self.peaks[npk-1].index < Pixel.fit_length + Pixel.fudge) :
 				self.peaks.pop()
-				self.npk -= 1
+
 			# assumption: data is modeled by a 3 parameter decaying exponential.
 			M = 3
 
@@ -1643,7 +1669,7 @@ class Pixel(object):
 			# for q in self.peaks:
 			# 	if q+1
 
-			for j in range(self.npk) :
+			for j in range(npk) :
 				# if peaks are closer than fit_length, fit the space between them minus 'fudge'.
 				if self.peaks[j+1].index-self.peaks[j].index < Pixel.fit_length : 
 					yi = self.data[self.peaks[j].index:self.peaks[j+1].index-Pixel.fudge]
@@ -1706,22 +1732,24 @@ class Pixel(object):
 		-step : if desired, filter a single step input (sets M = -1)
 		 '''
 
+		npk = len(self.peaks)
+
 		# no peaks found or if skipping peak detection and fitting ('simple' option), use default M. 
-		if (self.npk == 0 or simple == True) : # no peaks found, use default M.
+		if (npk == 0 or simple == True) : # no peaks found, use default M.
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(Pixel.zero_pk), c_double(self.avg))
 
-		elif (self.npk == 1) : # one peak found.
-			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
-			k_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.k
+		elif (npk == 1) : # one peak found.
+			l_arr = np.ones(npk, dtype = c_ulong)*Pixel.l
+			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
 			LEFT = np.array(0, dtype = c_ulong)
 			RIGHT = np.array(Pixel.daq_length, dtype = c_ulong)
 			M = np.array([i.tau for i in self.peaks])
-			PEAK = peaks_handle(self.npk, LEFT, RIGHT, l_arr, k_arr, M)
+			PEAK = peaks_handle(npk, LEFT, RIGHT, l_arr, k_arr, M)
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
 
-		elif (self.npk > 1) : # multiple peaks found.
-			l_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.l
-			k_arr = np.ones(self.npk, dtype = c_ulong)*Pixel.k
+		elif (npk > 1) : # multiple peaks found.
+			l_arr = np.ones(npk, dtype = c_ulong)*Pixel.l
+			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
 			LR = self.pk2LR()
 
 			# leave this comment in to check values later if desired
@@ -1734,7 +1762,7 @@ class Pixel(object):
 
 			M = np.array([i.tau for i in self.peaks])
 			# peaks_handle prepares a Ctypes 'Structure' object to make a C Structure.
-			PEAK = peaks_handle(self.npk, LR[0], LR[1], l_arr, k_arr, M)
+			PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
 			# self.filt = np.empty_like(self.data)
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
 
@@ -1754,17 +1782,18 @@ class Pixel(object):
 		- LEFT and RIGHT : beginning and end points for each set of 
 		trapezoidal filter parameters l,k, and M.'''
 		
+		npk = len(self.peaks)
 
-		LEFT = np.zeros(self.npk)
-		RIGHT = np.zeros(self.npk)
+		LEFT = np.zeros(npk)
+		RIGHT = np.zeros(npk)
 
-		for i in range(self.npk-1):
+		for i in range(npk-1):
 			LEFT[i]  = self.peaks[i].index   + self.shaper_offset
 			RIGHT[i] = self.peaks[i+1].index + self.shaper_offset
 			
 		LEFT[0] = 0
-		LEFT[self.npk-1] = self.peaks[self.npk-1].index + self.shaper_offset
-		RIGHT[self.npk-1] = Pixel.daq_length
+		LEFT[npk-1] = self.peaks[npk-1].index + self.shaper_offset
+		RIGHT[npk-1] = Pixel.daq_length
 
 		# trapezoidal filter uses size_t, or c_ulong, as its datatype
 		# for left and right. they index locations possibly larger than int allows.
@@ -1847,7 +1876,7 @@ class Event(object):
 		-a,b : length of major and minor axis. whichever is larger
 		is automatically used as the major axis.
 		-angle : angle of rotation (in degrees) from the x axis being 0 degrees.
-		when angle rolls over 90, it doesn't work very well, use this method:
+		when angle rolls over 90, it doesn't work properly, use this method:
 		0 -> 90 rotates the ellipse counter clockwise (starting lying horizontally)
 		0 -> -90 rotates the ellipse clockwise (starting lying horizontally)
 
