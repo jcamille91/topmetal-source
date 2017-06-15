@@ -308,7 +308,7 @@ class Sensor(object):
 		or  the ls fitting function will complain. This option has been commented out for later use
 		in the Pixel.fit_tau() method.
 
-		### to easily analyze this data, enter the created pixel index into
+		### to analyze this data, enter the created pixel index into
 		### the 'select' list argument for the Sensor.analyze() function.
 
 
@@ -320,7 +320,7 @@ class Sensor(object):
 		# define number of points for dataset.
 		# make sure there are enough points to accomodate 
 		# whatever features are defined below.
-		self.daq_length = 10000
+		self.daq_length = 100000
 
 		# signal baseline and noise.
 		baseline = 0.8
@@ -343,12 +343,22 @@ class Sensor(object):
 			# specify M=tau, peak location, amplitude, and the number of points to define
 			# the peak.
 			
-			M_i = np.array([40], dtype=np.float64)
-			M_loc = np.array([5000])
-			M_a = np.array([4.8])
-			# M_i = np.array([40, 20, 30, 50], dtype=np.float64)
-			# M_loc = np.array([1000, 3000, 5000, 8000])
+			# one pulse
+			# M_i = np.array([40], dtype=np.float64)
+			# M_loc = np.array([50000])
+			# M_a = np.array([1])
+
+			M_i = np.array([40, 20, 30, 50], dtype=np.float64)
+			M_loc = np.array([1000, 3000, 5000, 8000])
 			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
+			M_a = np.array([0.015, 0.015, 0.015, 0.015])
+
+			# three stacked pulses, let's see if the vsum calibration works if the response is no longer trapezoidal.
+			# M_i = np.array([40, 40, 40, 40], dtype=np.float64)
+			# M_loc = np.array([10000, 10040, 50000, 80000])
+			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
+
+
 			npk = len(M_i)
 			M_npt = 1000 # number of points defining pulse
 
@@ -368,6 +378,8 @@ class Sensor(object):
 			signal = step + noise
 
 		elif choose == 'trap' :
+
+			# don't think this is correct
 			trap = np.zeros(self.daq_length)
 			A = 4.8
 			l=60
@@ -381,50 +393,14 @@ class Sensor(object):
 				trap[loc+l-1+i] = A-stepsize*i
 			signal = trap + noise
 
+		elif choose == 'noise' :
+			signal = baseline + noise
+
 
 		else :
 			print("unrecognized input, set 'choose' to either 'exp' or 'step' to generate the desired signal")
 
 		self.pix.append(Pixel(0, signal, baseline, mV_noise*0.001))
-
-	def noise_hist(self, nbins=2000, end=0.003, axis=0):
-		''' make histogram of noise across 5184 channels. 
-		1 dimensional histogram plot.
-		inputs:
-		- data: 1D numpy array of data 
-		- nbins: number of desired bins.
-		- end: cutoff point for histogram x-axis
-		- axis: supply a pyplot axis object to plot to. For use as a quick and dirty
-		  plot, supply 0 for axis to generate a standalone fig,axis plot.
-		'''
-
-		# build a list of all the RMS noise values, excluding the dead channels.
-		rmsvalues = [self.pix[i].rms for i in range(self.dead, self.nch)]
-
-		if isinstance(axis, ax_obj) : # axis supplied
-			axis.set_title("Sensor Noise Histogram")
-			axis.hist(rmsvalues, nbins)
-			axis.set_xlabel('Volts RMS')
-			axis.set_ylabel('# of channels (5181 total)')
-			axis.set_title('Sensor Noise')
-			axis.set_xlim(0,end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-
-		else : 			# no axis supplied, make standalone plot.
-			fig = plt.figure(1)
-			axis = fig.add_subplot(111)
-			axis.set_title("Sensor Noise Histogram")
-			axis.hist(rmsvalues, nbins)
-			axis.set_xlabel('Volts RMS')
-			axis.set_ylabel('# of channels (5181 total)')
-			axis.set_title('Sensor Noise')
-			axis.set_xlim(0, end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-			fig.show()
-
-
 
 	def analyze(self, read=False, simple = False, select = [], noisethresh = 0.002,
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
@@ -443,8 +419,9 @@ class Sensor(object):
 		input:
 		-simple : set 'True' to just filter all the channels with the default filter parameters.
 		 no peak detection / exponential decay fitting.
-		-select : provide python list of desired channels. provide empty list to analyze all channels.
+		-select : provide list of desired channels. provide empty list to analyze all channels.
 		-step : set 'True' to run filter pixel(s) with containing step input. 
+		### not currently setup to work with 'step'
 		-noisethresh : threshold in volts to classify channels. channels above this value are labeled with
 		a string  as 'noisy'.
 
@@ -569,12 +546,7 @@ class Sensor(object):
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
 		
-		rd = input('reform data? enter ''yes/no''. \n')
-		if rd =='yes' :
-			self.reform_data()
-			print('Data reformed into Sensor.filt : %i x %i numpy array.' % (self.nch, self.daq_length))
-		else :
-			print('Data not reformed.')
+		print('finished analyzing', len(self.pix), 'pixels.') 
 
 
 	def label_events(self):
@@ -869,12 +841,6 @@ class Sensor(object):
 			ax2.grid(True)
 			fig2.show()		 
 
-		# show the region of interest (possible event)
-		# use this to verify we are taking data from desired channels.
-		# a = np.zeros(5184)
-		# a[self.selection] = 1
-		# self.pixelate_single(sample = 0, arr=a)
-
 		# show the the middle most frame of events of interest.
 		if show :
 
@@ -891,189 +857,8 @@ class Sensor(object):
 				ax3.add_artist(circ)
 				fig3.show()
 
-	def select_ellipse(self, x, y, a, b, angle) :
-
-		'''make an elliptical selection on the grid.
-			
-		input:
-		-x : coordinate x
-		-y : coordinate y
-		-a : x axis length defining ellipsoid
-		-b : y axis length defining ellipsoid
-		-angle : angle of rotation with respect to the x axis. 
-		y axis is 90 degrees, -x is 180 degrees, etc. etc.
-		'''
-
-		# caluclate the constants
-		angle =  angle-np.pi
-		sin = np.sin(angle)
-		sin2 = (np.sin(angle))**2
-		cos = np.cos(angle)
-		cos2 = (np.cos(angle))**2
-		a2 = a**2
-		b2 = b**2
-
-		# make a rectangle based on the major axis
-		# needs to be able to account for rotation
-		if a > b :
-			major = a
-		else :
-			major = b
-
-		rect = [((i, j), i+j*self.row) for j in range(y-major, y+major) for i in range(x-major,x+major)]
-
-		# cut out the ellipse. this is just an ellipse distance equation with an angle included..
-		selection = [rect[i][1] for i in range(len(rect)) if \
-		(((((rect[i][0][0]-x)*cos+(rect[i][0][1]-y)*sin2)**2)/a2) + \
-		((((rect[i][0][0]-x)*sin-(rect[i][0][1]-y)*cos2)**2)/b2)) < 1]
-
-		return selection
-
-	def select_circle(self, x, y, r) :
-
-		# circular selection.
-		rect = [((i, j), i+j*self.row) for j in range(y-r, y+r) for i in range(x-r,x+r)]
-		# linear location in 5184 element array of a 'radius' sized rectangle
-		#rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
-		# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
-		#xy = [(self.pix[i].loc, i) for i in rectangle]
-		# if the element is inside of the circle's radius, include it. We're cutting a circle out of a rectangle
-		selection = [rect[i][1] for i in range(len(rect)) if np.sqrt((rect[i][0][0]-x)**2 + (rect[i][0][1]-y)**2) < r]
-		
-		return selection
-
-		# retrieve all voltage values for the selected pixels and frames.
-		# values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
-	def select_rectangle(self, lr, tb) :
-
-		'''make a rectangular selection of pixels.
-		input:
-		-lr : the left and right most points as a two element list.
-		-tb : the top and bottom most points as a two element list.
-
-		'''
-
-		return [i+j*self.row for j in range(tb[0], tb[1]) for i in range(lr[0], lr[1])]
-
-	def select_test(self, rect=[],circle=[], ellipse=[], arr=[]) :
-
-		if not (rect and circle and ellipse and arr):
-			print('supply list of arguments for one of the four selection types:')
-			print('rect=[], circle=[], ellipse=[], or a list of custom values "arr".')
-
-	def selection(self, x_0, y_0, radius, frames, select = [], nbins = 2000, alpha = 1, axis = 0) :
-
-		### make histograms for selection of pixels and frames.
-		### fit the histogram. Yuan used sum of two gaussian functions, let's
-		### see how they unfitted histogram looks first.
-		### plot total fit, then plot the contituent fits.
-
-		''' generate a voltage histogram of signal selection inside of a defined circle.
-			alternatively, provide a list of pixels to use as a selection. 
-			
-			*** cartesian coordinates -> origin is top left corner. ***
-			*** left is increasing x, down is increasing y. 	    ***
-			
-			input:
-			-x_0, y_0 : center point of a circle to define an event.
-			-radius : distance from center to define circle enclosing event.
-			-frames : python list oftime points / frames to use in calculation.
-			**note: even a single frame input must be input as a list e.g. [12] 
-			can choose single point, or multiple. frames do not necessarily need to be contiguous.
-			-select : use select to supply a list of desired pixels to plot instead of default circle.
-			-nbins : number of bins for voltage histogram.
-			-axis : option to supply Axes  for plot with multiple steps.
-		'''
-
-		if not select :
-			# do the circular selection.
-
-			# linear location in 5184 element array
-			self.rectangle = [((self.row)*i)+j for j in range(x_0-radius, x_0+radius) for i in range(y_0-radius, y_0+radius)]
-			# list of ((x,y), i) tuples -> (xy coordinates, linear index) 
-			self.xy = [(self.pix[i].loc, i) for i in self.rectangle]
-			# if the element is inside of the circle's radius, include it.
-			self.selection = [self.xy[i][1] for i in range(len(self.xy)) if np.sqrt((self.xy[i][0][0]-x_0)**2 + (self.xy[i][0][1]-y_0)**2) < radius]
-			
-			# retrieve all voltage values for the selected pixels and frames.
-			values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
-
-		else :
-			# use the selected pixels
-
-			# numpy array of list comprehension of all filtered data to add to histogram.
-			self.selection = select
-			values = np.array([self.pix[i].filt[j] for i in self.selection for j in frames])
-		
-
-
-		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(values, nbins)
-			axis.set_xlabel('Volts RMS')
-			axis.set_ylabel('# of channels (5181 total)')
-			axis.set_title('Sensor Noise')
-			#axis.set_xlim(begin, end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-
-		else : 			# no axis supplied, make standalone plot.
-			fig = plt.figure(1)
-			axis = fig.add_subplot(111)
-			axis.hist(values, nbins)
-			axis.set_xlabel('Volts')
-			axis.set_ylabel('# of datapoints')
-			axis.set_title('filtered signal values')
-			#axis.set_xlim(begin, end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-			fig.show()	 
-
-		# show the region of interest (possible event)
-		# use this to verify we are taking data from desired channels.
-		# a = np.zeros(5184)
-		# a[self.selection] = 1
-		# self.pixelate_single(sample = 0, arr=a)
-
-		# show the frame that with an event of interest.
-		fig2, ax2 = plt.subplots(1,1)
-		if (len(frames) == 1) :
-			self.pixelate_single(sample = frames, arr=[], axis = ax2)
-		elif (len(frames) > 1) :
-			self.pixelate_single(sample = frames[0], arr=[], axis = ax2)
-		# add a circle to the event we are analyzing
-		circle = plt.Circle((x_0, y_0), radius, color = 'r', fill=False, linewidth = 1.5, alpha=alpha)
-		ax2.add_artist(circle)
-		fig2.show()
-
-	def signal_hist(self, nbins = 10000, begin = -0.03, end = 0.03, axis=0) :
-		''' generate a histogram with the range of signal values we are dealing with.
-		'''
-		# use numpy.ravel() for 1d view of 2d array.
-		# use numpy.flatten() for 1d copy of 2d array.
-		filt1d = self.filt.ravel() 
-
-		if isinstance(axis, ax_obj) : # axis supplied
-			axis.hist(filt1d, nbins)
-			axis.set_xlabel('Volts RMS')
-			axis.set_ylabel('# of channels (5181 total)')
-			axis.set_title('Sensor Noise')
-			axis.set_xlim(begin, end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-
-		else : 			# no axis supplied, make standalone plot.
-			fig = plt.figure(1)
-			axis = fig.add_subplot(111)
-			axis.hist(filt1d, nbins)
-			axis.set_xlabel('Volts')
-			axis.set_ylabel('# of datapoints')
-			axis.set_title('filtered signal values')
-			axis.set_xlim(begin, end) # x limits, y limits
-			#axis.set_ylim()
-			axis.grid(True)
-			fig.show()
-
 	def fit_hist(self, nbins = [100,100,100,100], hlr=[], plr=[(0,120), (0,300), (0,400), (0,1)],  axis=0) :
+		
 		''' 
 		generate a histogram with the range of fit parameter values we are dealing with.
 
@@ -1087,6 +872,13 @@ class Sensor(object):
 		return:
 		a tuple containing numpy arrays (M,A,OFF,XSQ)
 		'''
+
+		# std dev of each pixel over the entire dataset.
+		#rmsvalues = [self.pix[i].rms for i in range(self.dead, self.nch)]
+
+
+		#1d view of all signal values from the dataset.
+		#filt1d = self.filt.ravel()
 
 		# all detected amplitude, M, and offset values
 		M = np.array([pk.tau for px in self.pix for pk in px.peaks])
@@ -1167,10 +959,10 @@ class Sensor(object):
 		# case that we only analyze a few channels, but still want to use functions that depend on self.row
 		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
 
-	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = 0, vmax = 0.007) :
 
-		''' plot successive pixelated images of the 72*72 sensor.
+	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = -0.001, vmax = 0.007) :
 
+		'''
 		input:
 		-data : a (5184 x number of time samples) numpy array.
 		-start and stop : specify desired points in time to plot.
@@ -1181,15 +973,12 @@ class Sensor(object):
 		the images stream through on their own.
 		'''
 
-		a = np.arange(start, stop, stepsize)
-		nplot = len(a)
+		frames = np.arange(start, stop, stepsize)
+		nplot = len(frames)
 
-		# get the data into (72 x 72 x npt) array
-		data_2d = np.zeros((self.row, self.row, nplot))
+		d = [p.filt[start:stop:stepsize] for p in self.pix] # 5184 x nplot array
+		d = np.reshape(d, (self.row, self.row, nplot)) # 72 x 72 x nplot array
 
-		# load all of the data before plotting, so it can be accessed quickly.
-		for i in range(nplot) :
-			data_2d[:,:,i] = np.reshape(self.filt[:,a[i]], (self.row,-1)) # convert to square matrix
 
 		fig = plt.figure(1)
 		ax = fig.add_subplot(111)
@@ -1206,9 +995,9 @@ class Sensor(object):
 			#tstart = time.time()
 			for j in range(nplot) :
 				#t = j*stepsize*self.tsample
-				ax.set_title("Frame %i" % a[j])
+				ax.set_title("Frame %i" % frames[j])
 				#ax.set_title("Time elapsed: %f seconds" % t)
-				im.set_data(data_2d[:,:,j])
+				im.set_data(d[:,:,j])
 				im.axes.figure.canvas.draw()
 
 		# step through series of images by keyboard input 'enter'
@@ -1217,13 +1006,14 @@ class Sensor(object):
 			for j in range(nplot) :
 				input("press enter for next frame")
 				#t = j*stepsize*self.tsample
-				ax.set_title("Frame %i" % a[j])
+				ax.set_title("Frame %i" % frames[j])
 				#ax.set_title("Time elapsed: %f seconds" % t)
-				im.set_data(data_2d[:,:,j])
+				im.set_data(d[:,:,j])
 				im.axes.figure.canvas.draw()
 
 		# close the figure
 		plt.close(fig)
+
 
 	def pixelate_single(self, sample, values = [], vmin=-0.001, vmax=0.007, axis = 0):
 		''' Take 5184 channel x 25890 data point array and plot desired points in
@@ -1231,7 +1021,7 @@ class Sensor(object):
 		
 		input:
 		-sample : desired point in sample space to plot 0-25889
-		-values : input pixels to show.
+		-values : input pixels to show. useful to check that a selection was created properly.
 		-vmin , vmax : minimum and maximum values for the colormap.
 		-axis: supply an axis to impose this pixel plot to that axis.
 		if no axis is supplied (default), then the function generates a standalone image.
@@ -1863,7 +1653,7 @@ class Peak(object):
 
 class Event(object):
 	row = 72
-	def __init__(self, x, y, i, r=None, a=None, b=None, angle=None, shape='c'):
+	def __init__(self, x, y, i, r=None, a=None, b=None, angle=0, shape='c'):
 		'''
 		input: behave differently for different shape strings, read below.
 
