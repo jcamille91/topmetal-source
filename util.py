@@ -406,8 +406,8 @@ class Sensor(object):
 				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
 			    
 			    fit_length = 300, fudge = 20, 											   # lsq fit
-			    bounds = ([0.0, 1.0/200, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
-			    guess = [0.008, 1.0/35, 0],						   				   		   # amplitude, 1/tau, offset
+			    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
+			    guess = [0.008, 1.0, 0],						   				   		   # amplitude, 1/tau, offset
 			    
 			    l = 60, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
 
@@ -452,7 +452,7 @@ class Sensor(object):
 		 are removed from the end of the fit, to try and ensure the tail of the fit 
 		 does not catch the rise of the next peak.
 		-bounds : minimum and maximum values as possible fit values. specifying a reasonable range of
-		values can speed up the fit process. 
+		values can speed up the fit process. the baseline for each pixel offsets the amplitude and offset fit parameters. 
 		FORMAT: [(amplitude, 1/tau, offset)min, (amplitude, 1/tau, offset)max]
 		-guess: inital guess for exponential fit parameters. [amplitude, 1/tau, offset]
  
@@ -1263,6 +1263,9 @@ class Pixel(object):
 	
 	# shaper functions arguments. 
 	# one for multiple M (takes peaks_t struct), another for single M dataset.
+	### shaper_single is broken - gives trapezoidal response but pulse height is wrong... and dependent on l,k.
+	### as a temporary fix, we just implemented all of the filtering with shaper_multi, even for one and zero peaks.
+
 	shp_lib.shaper_multi.restype = None
 						  # 	     	in 			out   	 length   peaks_t struct 	baseline
 	shp_lib.shaper_multi.argtypes = [double_ptr, double_ptr, c_ulong, POINTER(peaks_t), c_double]
@@ -1277,7 +1280,7 @@ class Pixel(object):
 	
 
 	# these attributes are set when Sensor.analyze() is called.
-	# they pertain to the analysis chain.
+	# they're used by the analysis chain.
 	
 	daq_length = None
 	noisethresh = None
@@ -1514,12 +1517,14 @@ class Pixel(object):
 
 			self.peaks.pop()
 
-	def filter_peaks(self, step=False, simple=False):
+	def filter_peaks(self, step=False, simple=False, iter=False):
 
 		''' apply trapezoidal filter to data. peak locations are used to change
 		filter parameters.
 		input:
 		-step : if desired, filter a single step input (sets M = -1)
+		-simple : filter the data with the default M value.
+		-iter : filter the data using the the newly iterated value of M
 		 '''
 
 		npk = len(self.peaks)
@@ -1533,7 +1538,10 @@ class Pixel(object):
 			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
 			LEFT = np.array(0, dtype = c_ulong)
 			RIGHT = np.array(Pixel.daq_length, dtype = c_ulong)
-			M = np.array([i.tau for i in self.peaks])
+			if iter :
+				M = np.array([i.M_it for i in self.peaks])
+			else :			
+				M = np.array([i.tau for i in self.peaks])
 			PEAK = peaks_handle(npk, LEFT, RIGHT, l_arr, k_arr, M)
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
 
@@ -1549,8 +1557,10 @@ class Pixel(object):
 			# print('number of peaks =', npk)
 			# print('LEFT = ', LR[0])
 			# print('RIGHT = ', LR[1])
-
-			M = np.array([i.tau for i in self.peaks])
+			if iter :
+				M = np.array([i.M_it for i in self.peaks])
+			else :			
+				M = np.array([i.tau for i in self.peaks])
 			# peaks_handle prepares a Ctypes 'Structure' object to make a C Structure.
 			PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
 			# self.filt = np.empty_like(self.data)
@@ -1592,6 +1602,82 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
+	def iter_M(self, step_it=1, option='pk') :
+		'''
+		a function to iteratively correct the M values used for each peak.
+		increases or decreases M to minimize the undershoot / overshoot.
+		This is important because the trapezoidal voltage summation is sensitive to error in M.
+		
+		observation: 
+		1. if M is too big, there is undershoot and the flat top peaks on the left side.
+		2. if M is too small, there is overshoot and the flat top peaks on the right side.
+
+		the flat-top peak is referred to as 'bump' below in the algorithm.
+		
+		input:
+
+		-step_it: the stepsize for each iteration of M. smaller values can be more accurate,
+		but will take longer to run.
+		-option: two different ways to identify errror in M
+		'''
+
+		# improve M by using flat top peaking
+		if option == 'pk' :
+
+			# initialize parameters, do the first iteration.
+
+			# dir : +1 increasing
+			#	  : -1 decreasing
+
+
+			for pk in self.peaks :
+				pk.M_it = pk.tau
+				bump = np.argmax(self.filt[pk.index : pk.index + Pixel.l + Pixel.k])
+				
+				# M is too small
+				if (bump > (pk.index + Pixel.l + Pixel.k)/2) :
+					pk.M_it += step_it
+					pk.dir_it = 1
+
+				# M is too big 
+				else :
+					pk.M_it -= step_it
+					pk.dir_it = -1
+
+			self.filter_peaks()
+
+
+			# keep going until the peak flips sides of 
+			# the trapezoidal response, then we're done.
+			for pk in self.peaks :
+
+				bump = np.argmax(self.filt[pk.i : pk.i + Pixel.l + Pixel.k])
+
+				# M is too small
+				if (bump > (pk.index + Pixel.l + Pixel.k)/2) :
+
+					# M was too big before, but now we've made it too small. 
+					# we're done.
+					if pk.dir_it == -1 :
+						pk.dir_it = 0
+					# Keep making M bigger.
+					elif pk.dir_it == 1 :
+						pk.M_it += pk.M_it
+				else :
+					# M was too small before, but now we've made it too big. 
+					# we're done.
+					if pk.dir_it == -1 :
+						pk.dir_it = 0
+					# Keep making M bigger.
+					elif pk.dir_it == 1 :
+						pk.M_it += pk.M_it
+
+
+		# improve M by using undershoot / overshoot
+		elif option == 'urs' : 
+
+
+		# at the end compare  new and old chisquare values
 	def calc_urs(self, npt_avg, avg_off):
 		'''
 		for every detected peak in the list of Peak objects, calculate the undershoot of the filtered data.
