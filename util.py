@@ -1602,15 +1602,15 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it=1, option='pk') :
+	def iter_M(self, step_it=1, npt_avg, off_us, thresh_us, option='urs') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
 		This is important because the trapezoidal voltage summation is sensitive to error in M.
 		
 		observation: 
-		1. if M is too big, there is undershoot and the flat top peaks on the left side.
-		2. if M is too small, there is overshoot and the flat top peaks on the right side.
+		1. if M is too big, there is undershoot and the flat top bulges on the left side.
+		2. if M is too small, there is overshoot and the flat top bulges on the right side.
 
 		the flat-top peak is referred to as 'bump' below in the algorithm.
 		
@@ -1618,17 +1618,22 @@ class Pixel(object):
 
 		-step_it: the stepsize for each iteration of M. smaller values can be more accurate,
 		but will take longer to run.
-		-option: two different ways to identify errror in M
+		-option: two different ways to identify errror in M.
+		-npt_avg, off_us, thresh_us : parameters for undershoot calculation. 
+		'npt_avg' is the number of points to average, 'off_us' offsets the average from l+k points after the peak,
+		and 'thresh_us' is some threshold for deciding when the undershoot/ overshoot have been 
+		1. 'bump' identifies characteristic bump on l/r of the flat-top section of the trapezoid.
+		this method did not work well in the presence of noise on the scale we are dealing with.
+		2. 'urs' calculates undershoot / overshoot 
+
 		'''
 
 		# improve M by using flat top peaking
-		if option == 'pk' :
+		if option == 'bump' :
 
-			# initialize parameters, do the first iteration.
+			# this first loop is to initialize iteration variables
 
-			# dir : +1 increasing
-			#	  : -1 decreasing
-
+			npk = len(self.peaks) 
 
 			for pk in self.peaks :
 				pk.M_it = pk.tau
@@ -1636,46 +1641,90 @@ class Pixel(object):
 				
 				# M is too small
 				if (bump > (pk.index + Pixel.l + Pixel.k)/2) :
-					pk.M_it += step_it
 					pk.dir_it = 1
 
 				# M is too big 
 				else :
-					pk.M_it -= step_it
 					pk.dir_it = -1
 
-			self.filter_peaks()
+			self.filter_peaks(iter=True)
+
+			# Main Loop.
+			# keep going until all of the peaks are done. 
+			# we'll decrement 'npk' everytime a peak is done iterating.
 
 
-			# keep going until the peak flips sides of 
-			# the trapezoidal response, then we're done.
-			for pk in self.peaks :
+			# this loop gets into a trap. once a M is incorrectly made +/-, 
+			# it keeps making the wrong condition filled, getting stuck in a loop forever.
+			# is an undershoot calculation possible with so much noise?
 
-				bump = np.argmax(self.filt[pk.i : pk.i + Pixel.l + Pixel.k])
-
-				# M is too small
-				if (bump > (pk.index + Pixel.l + Pixel.k)/2) :
-
-					# M was too big before, but now we've made it too small. 
-					# we're done.
-					if pk.dir_it == -1 :
-						pk.dir_it = 0
-					# Keep making M bigger.
-					elif pk.dir_it == 1 :
-						pk.M_it += pk.M_it
-				else :
-					# M was too small before, but now we've made it too big. 
-					# we're done.
-					if pk.dir_it == -1 :
-						pk.dir_it = 0
-					# Keep making M bigger.
-					elif pk.dir_it == 1 :
-						pk.M_it += pk.M_it
+			i = 0 
+			while(npk) :
+				i += 1
+				print(i)
 
 
-		# improve M by using undershoot / overshoot
-		elif option == 'urs' : 
+				for pk in self.peaks :
 
+					bump = np.argmax(self.filt[pk.index : pk.index + Pixel.l + Pixel.k])
+
+					# M is too small
+					if (bump > (pk.index + Pixel.l + Pixel.k)/2) :
+
+						# Keep making M bigger.
+						if pk.dir_it == 1 :
+							pk.M_it += step_it
+
+						# M was too big before, but now we've made it too small. 
+						# we're done.
+						elif pk.dir_it == -1 :
+							pk.dir_it = 0
+							npk -= 1 # decrement number of remaining peaks to iterate
+
+					# M is too big
+					else :
+
+						# Keep making M smaller.
+						if pk.dir_it == -1 :
+							pk.M_it -= step_it
+
+						# M was too small before, but now we've made it too big. 
+						# we're done.
+						elif pk.dir_it == 1 :
+							pk.dir_it = 0
+							npk -= 1
+
+					self.filter_peaks(iter=True)
+
+		# calculate undershoot wrt baseline
+		elif option == 'urs1' : 
+			off = Pixel.l+Pixel.k+npt_off # number of points from peak to calculate undershoot / overshoot
+			for pk in self.peaks : 
+					
+				# calculate average after trapezoid 
+				start = pk.index + off
+				stop = start + npt_avg
+				self.shoot = pk.avg - np.average(self.filt[start:stop])
+
+				if abs(self.shoot) > thresh_us :
+
+		# calculate undreshoot wrt flat-top
+		elif option == 'urs2' : 
+			off = Pixel.l+Pixel.k+npt_off # number of points from peak to calculate undershoot / overshoot
+			for pk in self.peaks : 
+				# calculate pre trapezoid section.
+				np.average(self.filt[pk.index-npt_avg:pk.index])	
+
+				# calculate flat-top average
+				np.average(self.filt[pk.index+Pixel.k:pk.index+Pixel.l])
+
+				# calculate post trapezoid section.
+				np.average(self.filt[pk.index+Pixel.l+Pixel.k:pk.index+Pixel.l+Pixel.k+npt_avg])
+				start = pk.index + off
+				stop = start + npt_avg
+				self.shoot = pk.avg - np.average(self.filt[start:stop])
+
+				if abs(self.shoot) > thresh_us :
 
 		# at the end compare  new and old chisquare values
 	def calc_urs(self, npt_avg, avg_off):
@@ -1731,11 +1780,25 @@ class Pixel(object):
 			self.magabob = 0
 
 class Peak(object):
-
+	'''
+	object for peak instances found in the dataset, 
+	determined by peakdet parameters set in the analysis chain.
+	'''
 	def __init__(self, index) :
+		
+		'''
+		attributes:
+		-index: location in dataset of peak. (maximum value)
+		-tau: decay constant extracted by least-squares fit.
+		-chisq : chi-square value from least-squares fit
+		-shoot : undershoot / overshoot due to trapezoidal filtering.
+		positive value -> overshoot (tau is too small), negative value -> undershoot (tau is too big)
+		'''
+
 		self.index = index
 		# self.tau = None
 		# self.chisq = None
+		# self.shoot = None 
 
 class Event(object):
 	row = 72
