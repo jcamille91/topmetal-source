@@ -1602,7 +1602,7 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it=1, npt_avg, off_us, thresh_us, option='urs') :
+	def iter_M(self, step_it = 1, npt_avg = 10, avg_off = 2, thresh_us=0.002, option='urs1') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
@@ -1628,6 +1628,10 @@ class Pixel(object):
 
 		'''
 
+		# initialize new M we get from iteration.
+		for pk in self.peaks :
+			pk.M_it = pk.tau
+
 		# improve M by using flat top peaking
 		if option == 'bump' :
 
@@ -1636,7 +1640,6 @@ class Pixel(object):
 			npk = len(self.peaks) 
 
 			for pk in self.peaks :
-				pk.M_it = pk.tau
 				bump = np.argmax(self.filt[pk.index : pk.index + Pixel.l + Pixel.k])
 				
 				# M is too small
@@ -1697,34 +1700,54 @@ class Pixel(object):
 					self.filter_peaks(iter=True)
 
 		# calculate undershoot wrt baseline
-		elif option == 'urs1' : 
-			off = Pixel.l+Pixel.k+npt_off # number of points from peak to calculate undershoot / overshoot
-			for pk in self.peaks : 
-					
-				# calculate average after trapezoid 
-				start = pk.index + off
-				stop = start + npt_avg
-				self.shoot = pk.avg - np.average(self.filt[start:stop])
+		elif option == 'urs1' :
+						
+			# get the region of interest for each peak.
+			for pk in self.peaks :
+				pk.start = pk.index + Pixel.l + Pixel.k + avg_off
+				pk.stop = pk.start + npt_avg
 
-				if abs(self.shoot) > thresh_us :
+			npk = len(self.peaks)
+			go = 1
+			while(go) :
+				go = len(self.peaks)
+				for pk in self.peaks : 
+						
+					# calculate average after trapezoid 
+					pk.shoot = self.avg - np.average(self.filt[pk.start:pk.stop])
+
+					# could later make separate threshold's for undershoot / overshoot if necessary.
+					
+					# excessive undershoot (M is too big)
+					if pk.shoot > thresh_us :
+						pk.M_it -= step_it
+
+					# excessive overshoot (M is too small)
+					elif pk.shoot < -1*thresh_us : 
+						pk.M_it += step_it
+
+					else : 
+						go -= 1
+
+					self.filter_peaks(iter=True)
 
 		# calculate undreshoot wrt flat-top
 		elif option == 'urs2' : 
 			off = Pixel.l+Pixel.k+npt_off # number of points from peak to calculate undershoot / overshoot
 			for pk in self.peaks : 
 				# calculate pre trapezoid section.
-				np.average(self.filt[pk.index-npt_avg:pk.index])	
+				pre=np.average(self.filt[pk.index-npt_avg:pk.index])	
 
-				# calculate flat-top average
-				np.average(self.filt[pk.index+Pixel.k:pk.index+Pixel.l])
+				# calculate flat-top section
+				flat=np.average(self.filt[pk.index+Pixel.k:pk.index+Pixel.l])
 
 				# calculate post trapezoid section.
-				np.average(self.filt[pk.index+Pixel.l+Pixel.k:pk.index+Pixel.l+Pixel.k+npt_avg])
-				start = pk.index + off
-				stop = start + npt_avg
+				post=np.average(self.filt[pk.index+Pixel.l+Pixel.k:pk.index+Pixel.l+Pixel.k+npt_avg])
+			
 				self.shoot = pk.avg - np.average(self.filt[start:stop])
 
 				if abs(self.shoot) > thresh_us :
+					a=1
 
 		# at the end compare  new and old chisquare values
 	def calc_urs(self, npt_avg, avg_off):
