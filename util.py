@@ -320,7 +320,7 @@ class Sensor(object):
 		# define number of points for dataset.
 		# make sure there are enough points to accomodate 
 		# whatever features are defined below.
-		self.daq_length = 100000
+		self.daq_length = 10000
 
 		# signal baseline and noise.
 		baseline = 0.8
@@ -1602,15 +1602,18 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it = 1, npt_avg = 10, avg_off = 2, thresh_us=0.002, option='urs1') :
+	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = 2, thresh_us=0.002, option='test') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
 		This is important because the trapezoidal voltage summation is sensitive to error in M.
 		
 		observation: 
-		1. if M is too big, there is undershoot and the flat top bulges on the left side.
-		2. if M is too small, there is overshoot and the flat top bulges on the right side.
+		1. if M is smaller than the true tau, 
+		there is undershoot and the flat top bulges on the left side.
+		
+		2. if M is bigger than the true tau, 
+		there is overshoot and the flat top bulges on the right side.
 
 		the flat-top peak is referred to as 'bump' below in the algorithm.
 		
@@ -1618,6 +1621,9 @@ class Pixel(object):
 
 		-step_it: the stepsize for each iteration of M. smaller values can be more accurate,
 		but will take longer to run.
+		-max_it: maximum number of iterations, incase we keep missing the edge case.
+		a reasonable number of iterations can be deduced from the range of acceptable M values
+		and the initial guess.
 		-option: two different ways to identify errror in M.
 		-npt_avg, off_us, thresh_us : parameters for undershoot calculation. 
 		'npt_avg' is the number of points to average, 'off_us' offsets the average from l+k points after the peak,
@@ -1629,8 +1635,8 @@ class Pixel(object):
 		'''
 
 		# initialize new M we get from iteration.
-		for pk in self.peaks :
-			pk.M_it = pk.tau
+		# for pk in self.peaks :
+		# 	pk.M_it = pk.tau
 
 		# improve M by using flat top peaking
 		if option == 'bump' :
@@ -1708,28 +1714,63 @@ class Pixel(object):
 				pk.stop = pk.start + npt_avg
 
 			npk = len(self.peaks)
-			go = 1
-			while(go) :
+			go = True 
+			n_it = max_it
+			while(go and ) :
+				n_it -= 1
 				go = len(self.peaks)
 				for pk in self.peaks : 
 						
 					# calculate average after trapezoid 
-					pk.shoot = self.avg - np.average(self.filt[pk.start:pk.stop])
+					pk.shoot = np.average(self.filt[pk.start:pk.stop])
 
 					# could later make separate threshold's for undershoot / overshoot if necessary.
 					
 					# excessive undershoot (M is too big)
 					if pk.shoot > thresh_us :
-						pk.M_it -= step_it
+						pk.M_it += step_it
 
 					# excessive overshoot (M is too small)
 					elif pk.shoot < -1*thresh_us : 
-						pk.M_it += step_it
+						pk.M_it -= step_it
 
 					else : 
 						go -= 1
 
 					self.filter_peaks(iter=True)
+
+# calculate undershoot wrt baseline, let's try and get this working properly.
+		elif option == 'test' :
+						
+			# get the region of interest for each peak.
+			for pk in self.peaks :
+				pk.start = pk.index + Pixel.l + Pixel.k + avg_off
+				pk.stop = pk.start + npt_avg
+
+			npk = len(self.peaks)
+			# go = True
+			# while(go) :
+			go = len(self.peaks)
+			for pk in self.peaks : 
+					
+				# calculate average after trapezoid 
+				pk.shoot = np.average(self.filt[pk.start:pk.stop])
+
+				# could later make separate threshold's for undershoot / overshoot if necessary.
+				
+				# excessive overshoot (M is too big)
+				if pk.shoot > thresh_us :
+					pk.M_it += step_it
+				
+				# excessive undershoot (M is too small)
+				elif pk.shoot < -1*thresh_us : 
+					pk.M_it -= step_it
+
+				else : 
+					go -= 1
+				print('M=%f, M_it=%f, us/os=%f, go=%i' % (pk.tau, pk.M_it, pk.shoot, go))
+				
+			self.filter_peaks(iter=True)
 
 		# calculate undreshoot wrt flat-top
 		elif option == 'urs2' : 
@@ -1744,12 +1785,35 @@ class Pixel(object):
 				# calculate post trapezoid section.
 				post=np.average(self.filt[pk.index+Pixel.l+Pixel.k:pk.index+Pixel.l+Pixel.k+npt_avg])
 			
-				self.shoot = pk.avg - np.average(self.filt[start:stop])
+				self.shoot = np.average(self.filt[start:stop])
 
 				if abs(self.shoot) > thresh_us :
 					a=1
 
 		# at the end compare  new and old chisquare values
+
+	def enter_peaks(self) :
+
+
+		''' function to quickly enter M values into peaks via command line, for purposes of testing.
+		'''
+
+		i = 0
+		for pk in self.peaks :
+			i+=1
+			print('peak %i index: %i tau: %f chisq: %f' % (i, pk.index, pk.tau, pk.chisq))
+
+			# let's use try and except with value error to check that type is correct.
+			while True :
+				try :
+					val = float(input('enter an M value. \n'))
+					break
+				except ValueError :
+					print('enter a variable with type "int" or "float". \n')
+			pk.tau = val
+			pk.M_it = val
+
+			
 	def calc_urs(self, npt_avg, avg_off):
 		'''
 		for every detected peak in the list of Peak objects, calculate the undershoot of the filtered data.
