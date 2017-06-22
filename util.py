@@ -6,27 +6,10 @@ import time
 # for importing data from HDF5 files into Numpy arrays
 import h5py 
 
+# we use 'pickle' to save a big list of detected peaks from the analysis chain.
+# we can reload them later to quickly re-filter the data without needing to
+# redo the detection and fit procedure.
 import pickle
-# saving Sensor objects after doing all the analysis, so they can 
-# quickly be re-tested without redoing entire filtering procedure.
-#### sensor objects with data are large, and there is some issue
-####  using pickle for large objects. it is capable of serializingl large objects
-#### there's still a bug associated with larger sizes however...
-
-
-# Ctypes and Numpy support for calling C functions defined in shared libraries.
-# These functions can be slow when implemented in Python.
-
-# Ctypes datatypes
-from ctypes import c_ulong, c_int, c_double, c_float
-# C equivalents =  size_t,  int,   double,   float
-
-# CDLL used to load desired shared library. 
-# POINTER creates C pointer object. byref() for passing pointers.
-# ctypes Structure object allows creation of C 'struct'.
-from ctypes import CDLL, POINTER, byref, Structure
-
-import numpy.ctypeslib as npct
 
 # plotting tools. so far, sticking to matplotlib.
 import matplotlib
@@ -61,7 +44,23 @@ wfm = namedtuple('wfm', 'avg rms data') #  waveform data + info.
 trig = namedtuple('trig', 'mean dY S ddS cds peaks toss pkm') # each step of peak detection algorithm.
 PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detection performance of all 72x72 sensor channels
 
+# Ctypes and Numpy support for calling C functions defined in shared libraries.
+# These functions can be slow when implemented in Python.
+
+# datatypes
+from ctypes import c_ulong, c_int, c_double, c_float
+# C equivalents =  size_t,  int,   double,   float
+
+
+from ctypes import CDLL, # CDLL used to load desired shared library. 
+POINTER, # POINTER creates equivalent of a C pointer. 
+byref, # byref() for passing pointers to function. 
+Structure # ctypes 'Structure' class allows creation of C 'struct'.
+
+import numpy.ctypeslib as npct
+
 ### a note on the two types of python pointer functionalities used here ###
+
 # 1. use Ctypes 'POINTER' functionality for defining/building data structures
 # to use between C and Python.
 # 2. use Numpy.Ctypeslib's 'ndpointer' to easily pass and return
@@ -1065,26 +1064,26 @@ class Sensor(object):
 			fig.show()
 
 
-	def plot_waveform(self, pixels=[], choose='b', avg=True, pk = True, fit = False, lr = None) :
+	def plot_waveform(self, pixels=[], choose='b', avg=True, pk = True, fit = False, lr = None, us_pt = False) :
 		'''
 		This function can plot a series of channels. When the user
 		presses 'Enter', the next channel's plot is replaces the prior.
-		User can plot raw data, filtered data, or both with the 
-		peak least squares fits.
+		User can plot raw data, filtered data, or both.
 
 		input: 
-		-pixels : 1D np.array/list containing Pixel indices to plot. 
+		-pixels : 1D array/list containing Pixel indices to plot. 
 		-choose : 'd' plots raw data, 'f' plots filtered data.
 			'b' plots the raw data and filtered data.
 		-avg : superimpose a line of the average voltage onto the raw data plot.
-		-pk : superimpose scatter plot of detected peaks.
+		-pk : pk == 'True' superimpose scatter plot of detected peaks.
 		-fit : fit == 'True' superimposes scatter plot of fits 
 			for a channel's peaks onto the same axis plotting the raw data.
 		-lr : input a tuple to slice the plot. for example, if the dataset has
 		25890 points, lr = (2000,4000) would only plot points 2000 through 4000.
 		lr defaults to plotting the entire dataset. 
-		#### lr hasn't been updated to remove peaks / fits that are outside
-		of the window lr specifies, so these functionalities don't work together yet.
+		-us_pt : set 'True' to show points used to calculate undershoot when using 'test' option
+		inside the Pixel.iter_M() method. Use this option to see if the points used in the calculation 
+		are reasonable and cover the correct portion of the trapezoidal waveform.
 
 		'''
 		if not lr :
@@ -1120,11 +1119,18 @@ class Sensor(object):
 				print('pixel number', i)
 
 				# print peaks' location, tau, and chisq
-				peaks = [(j.index, j.tau, j.chisq) for j in self.pix[i].peaks]
-				print('{0: >5s}, {1: >5s}, {2: >7s}'.format('loc', 'tau', 'chisq'))
-				for k in peaks:
-					print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k[0],k[1], k[2]))
+				peaks = [(j.index, j.tau, j.chisq, j.M_it) for j in self.pix[i].peaks]
 
+				if peaks[0][3] :
+					# if M_it is defined
+					print('{0: >5s}, {1: >5s}, {2: >7s}, {3: >7s}'.format('loc', 'tau', 'chisq', 'M_it'))
+					for k in peaks:
+						print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5f}'.format(k[0],k[1], k[2], k[3]))
+				else : 
+					# if M_it isn't defined.
+					print('{0: >5s}, {1: >5s}, {2: >7s}'.format('loc', 'tau', 'chisq'))
+					for k in peaks:
+						print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k[0],k[1], k[2]))
 				ax.cla()
 				ax.set_title('raw data, channel no. %i : (%i, %i)' 
 					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
@@ -1136,19 +1142,21 @@ class Sensor(object):
 				if avg :
 					ax.step(x, np.ones(datalen)*self.pix[i].avg, color = 'y')
 
-				# take peak objects only inside of the window we are plotting, determined by 'lr' tuple
-				peaks = [j for j in self.pix[i].peaks if (j.index < lr[1] and j.index > lr[0])]
+
 
 				if pk :
-					peak_indices = [j.index for j in peaks]
+					# take peak objects only inside of the window we are plotting, determined by 'lr' tuple
+					peaks_indices = [j.index for j in self.pix[i].peaks if (j.index < lr[1] and j.index > lr[0])]
 					ax.scatter(peak_indices, self.pix[i].data[peak_indices], color='r', marker ='x')
 
 				if fit :
 					# impose a scatter plot for each fitted peak onto the raw data.
+					# only plot fits that lie inside the window.
 					for j in peaks :
-						ax.scatter(j.fit_pts + j.index, 
-							model_func(j.fit_pts, *j.fit_par), 
-							marker='o', color = 'g')
+						if (j.index + Pixel.fit_length  < lr[1] and j.index > lr[0]) :
+							ax.scatter(j.fit_pts + j.index, 
+								model_func(j.fit_pts, *j.fit_par), 
+								marker='o', color = 'g')
 
 				# now plot the filtered data.		
 				ax2.cla()
@@ -1160,6 +1168,14 @@ class Sensor(object):
 				if pk :
 					ax2.scatter(peak_indices, self.pix[i].filt[peak_indices], marker ='x', color='r')
 				
+				if us_pt :
+
+					for pk in self.pix[i].peaks :
+
+						ax2.scatter(pk.pre, self.pix[i].filt[pk.pre], marker ='x', color='olive')
+						ax2.scatter(pk.flat, self.pix[i].filt[pk.flat], marker ='x', color='indigo')
+						ax2.scatter(pk.post, self.pix[i].filt[pk.post], marker ='x', color='orange')
+
 				# ax is raw data, ax2 is filtered data.
 				ax.figure.canvas.draw()
 				ax2.figure.canvas.draw()
@@ -1440,11 +1456,12 @@ class Pixel(object):
 		# a list with items returns 'True'. An empty list returns 'False'.
 		if self.peaks :
 
-			npk = len(self.peaks)
 
 			# if the last peak is too close to the end of the dataset, we won't try to fit it.
-			if (Pixel.daq_length - self.peaks[npk-1].index < Pixel.fit_length + Pixel.fudge) :
+			if (Pixel.daq_length - self.peaks[-1].index < Pixel.fit_length + Pixel.fudge) :
 				self.peaks.pop()
+
+			npk = len(self.peaks)
 
 			# assumption: data is modeled by a 3 parameter decaying exponential.
 			M = 3
@@ -1516,6 +1533,20 @@ class Pixel(object):
 			# the fit procedure.
 
 			self.peaks.pop()
+	
+	def peak_cut(self, tau_range, chisq_range) :
+
+		''' function to remove peaks from the dataset based on some criteria.
+		This is done separately from minimum separation filtering because 
+		we need the least-squares fit information to do this.
+
+		input:
+		-tau_range : range of acceptable tau values. outside of this range, peaks will be removed.
+		-chisq_range : range of acceptable chi square values. outside of this range, peaks will be removed.
+		'''
+
+		pass
+
 
 	def filter_peaks(self, step=False, simple=False, iter=False):
 
@@ -1602,7 +1633,7 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = 2, thresh_us=0.002, option='test') :
+	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = 2, thresh_us=0.002, option='diff') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
@@ -1627,7 +1658,7 @@ class Pixel(object):
 		-option: two different ways to identify errror in M.
 		-npt_avg, off_us, thresh_us : parameters for undershoot calculation. 
 		'npt_avg' is the number of points to average, 'off_us' offsets the average from l+k points after the peak,
-		and 'thresh_us' is some threshold for deciding when the undershoot/ overshoot have been 
+		and 'thresh_us' is for deciding when the undershoot / overshoot are too big. 
 		1. 'bump' identifies characteristic bump on l/r of the flat-top section of the trapezoid.
 		this method did not work well in the presence of noise on the scale we are dealing with.
 		2. 'urs' calculates undershoot / overshoot 
@@ -1706,7 +1737,7 @@ class Pixel(object):
 					self.filter_peaks(iter=True)
 
 		# calculate undershoot wrt baseline
-		elif option == 'urs1' :
+		elif option == 'us_bl' :
 						
 			# get the region of interest for each peak.
 			for pk in self.peaks :
@@ -1716,7 +1747,9 @@ class Pixel(object):
 			npk = len(self.peaks)
 			go = True 
 			n_it = max_it
-			while(go and ) :
+
+			# loop ends if all peaks are done, or do max number of iterations.
+			while(go and n_it) :
 				n_it -= 1
 				go = len(self.peaks)
 				for pk in self.peaks : 
@@ -1724,7 +1757,8 @@ class Pixel(object):
 					# calculate average after trapezoid 
 					pk.shoot = np.average(self.filt[pk.start:pk.stop])
 
-					# could later make separate threshold's for undershoot / overshoot if necessary.
+					# could later make separate threshold's for undershoot / overshoot if necessary,
+					# at a glance they don't appear symmetric.
 					
 					# excessive undershoot (M is too big)
 					if pk.shoot > thresh_us :
@@ -1740,7 +1774,7 @@ class Pixel(object):
 					self.filter_peaks(iter=True)
 
 # calculate undershoot wrt baseline, let's try and get this working properly.
-		elif option == 'test' :
+		elif option == 'test_bsl' :
 						
 			# get the region of interest for each peak.
 			for pk in self.peaks :
@@ -1773,24 +1807,85 @@ class Pixel(object):
 			self.filter_peaks(iter=True)
 
 		# calculate undreshoot wrt flat-top
-		elif option == 'urs2' : 
-			off = Pixel.l+Pixel.k+npt_off # number of points from peak to calculate undershoot / overshoot
+		elif option == 'test_ftop' : 
+
 			for pk in self.peaks : 
+
+				pk.pre = np.arange(pk.index - npt_avg + avg_off[0], pk.index + avg_off[0]) 
+				pk.flat = np.arange(pk.index + Pixel.k + avg_off[1], pk.index + Pixel.l + avg_off[1])
+				pk.post = np.arange(pk.index + Pixel.l + Pixel.k + avg_off[2],
+							pk.index + Pixel.l + Pixel.k + npt_avg + avg_off[2])
+				
 				# calculate pre trapezoid section.
-				pre=np.average(self.filt[pk.index-npt_avg:pk.index])	
+				pre=np.average(self.filt[pk.index - npt_avg + avg_off[0] : pk.index + avg_off[0]])	
 
 				# calculate flat-top section
-				flat=np.average(self.filt[pk.index+Pixel.k:pk.index+Pixel.l])
+				flat=np.average(self.filt[pk.index + Pixel.k + avg_off[1] : pk.index + Pixel.l + avg_off[1]])
 
 				# calculate post trapezoid section.
-				post=np.average(self.filt[pk.index+Pixel.l+Pixel.k:pk.index+Pixel.l+Pixel.k+npt_avg])
+				post=np.average(self.filt[pk.index + Pixel.l + Pixel.k + avg_off[2] : 
+							pk.index + Pixel.l + Pixel.k + npt_avg + avg_off[2]])
 			
-				self.shoot = np.average(self.filt[start:stop])
+				pk.A = flat-pre
+				pk.B = flat-post
+				pk.shoot = pk.A-pk.B
 
-				if abs(self.shoot) > thresh_us :
-					a=1
+				# M is bigger than tau, then there is undershoot.
+				if pk.shoot > thresh_us :
+					pk.M_it += step_it
 
-		# at the end compare  new and old chisquare values
+				# M is smaller than tau, then there is overshoot.
+				elif pk.shoot < -1*thresh_us:
+					pk.M_it -= step_it
+
+				print('M=%f, M_it=%f, shoot=%f, pre=%f, post=%f' % (pk.tau, pk.M_it, pk.shoot, pk.A, pk.B))
+			self.filter_peaks(iter=True)	
+		
+		elif option == 'diff' :
+			npk = len(self.peaks)
+
+			if (len(avg_off)) == 3 :
+				# loop terminates when maximum iterations completed, or all peaks are within the 
+				# undershoot / overshoot threshold (when 'go' == 0).
+				go = True 
+				while(max_it and go):
+					max_it -= 1
+					go = npk
+					for pk in self.peaks : 
+
+						# calculate pre-trapezoid section.
+						pre=np.average(self.filt[pk.index - npt_avg + avg_off[0] : pk.index + avg_off[0]])	
+
+						# calculate flat-top section
+						# flat=np.average(self.filt[pk.index + Pixel.k + avg_off[1] : pk.index + Pixel.l + avg_off[1]])
+
+						# calculate post-trapezoid section.
+						post=np.average(self.filt[pk.index + Pixel.l + Pixel.k + avg_off[2] : 
+							pk.index + Pixel.l + Pixel.k + npt_avg + avg_off[2]])
+					
+						# A = flat-pre
+						# B = flat-post
+						# shoot = A-B
+
+						diff = post-pre
+
+						# M is bigger than tau, then there is undershoot.
+						if diff > thresh_us :
+							pk.M_it += step_it
+
+						# M is smaller than tau, then there is overshoot.
+						elif diff < -1*thresh_us :
+							pk.M_it -= step_it
+						# undershoot is within bounds, done.
+						else :
+							go -=1
+
+					self.filter_peaks(iter=True)
+
+			else :
+				print('"iter_M not executed.')
+				print('"avg_off" requires 3 elements, one for offsetting each part of the waveform:')
+				print('Before the trapezoid, during the flat top, and after the trapezoid.')
 
 	def enter_peaks(self) :
 
@@ -1803,7 +1898,6 @@ class Pixel(object):
 			i+=1
 			print('peak %i index: %i tau: %f chisq: %f' % (i, pk.index, pk.tau, pk.chisq))
 
-			# let's use try and except with value error to check that type is correct.
 			while True :
 				try :
 					val = float(input('enter an M value. \n'))
@@ -1883,9 +1977,10 @@ class Peak(object):
 		'''
 
 		self.index = index
-		# self.tau = None
-		# self.chisq = None
-		# self.shoot = None 
+		self.tau = None
+		self.M_it = None # this M we get from iterating to minimize the undershoot / overshoot
+		self.chisq = None
+		self.shoot = None
 
 class Event(object):
 	row = 72
