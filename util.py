@@ -47,15 +47,22 @@ PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detecti
 # Ctypes and Numpy support for calling C functions defined in shared libraries.
 # These functions can be slow when implemented in Python.
 
-# datatypes
-from ctypes import c_ulong, c_int, c_double, c_float
-# C equivalents =  size_t,  int,   double,   float
+# datatypes ... C equivalent
+from ctypes import (
+	c_ulong,	# size_t
+	c_int,		# int
+	c_double, 	# double
+	c_float		# float
+	)
 
 
-from ctypes import CDLL, # CDLL used to load desired shared library. 
-POINTER, # POINTER creates equivalent of a C pointer. 
-byref, # byref() for passing pointers to function. 
-Structure # ctypes 'Structure' class allows creation of C 'struct'.
+
+from ctypes import (
+	CDLL,		# CDLL used to load desired shared library. 
+	POINTER,	# POINTER creates equivalent of a C pointer.
+	byref,		# byref() for passing pointers to function.
+	Structure 	# ctypes 'Structure' class allows creation of C 'struct'.
+	)
 
 import numpy.ctypeslib as npct
 
@@ -1117,20 +1124,35 @@ class Sensor(object):
 			for i in pixels :
 				input("press enter for next channel")
 				print('pixel number', i)
+				print('avg: %f, RMS: %f' % (self.pix[i].avg, self.pix[i].rms))
 
 				# print peaks' location, tau, and chisq
-				peaks = [(j.index, j.tau, j.chisq, j.M_it) for j in self.pix[i].peaks]
+				peaks = [j for j in self.pix[i].peaks]
 
-				if peaks[0][3] :
-					# if M_it is defined
+
+				try : # if M_it is defined.
 					print('{0: >5s}, {1: >5s}, {2: >7s}, {3: >7s}'.format('loc', 'tau', 'chisq', 'M_it'))
 					for k in peaks:
-						print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5f}'.format(k[0],k[1], k[2], k[3]))
-				else : 
-					# if M_it isn't defined.
+						print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5f}'.format(k.index,k.tau, k.chisq, k.M_it))
+					print('\n')
+
+				except (IndexError, TypeError) as e : # M_it isn't defined.
 					print('{0: >5s}, {1: >5s}, {2: >7s}'.format('loc', 'tau', 'chisq'))
 					for k in peaks:
-						print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k[0],k[1], k[2]))
+						print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k.index,k.tau, k.chisq))
+					print('\n')
+
+				# if peaks[0][3] :
+				# 	# if M_it is defined
+				# 	print('{0: >5s}, {1: >5s}, {2: >7s}, {3: >7s}'.format('loc', 'tau', 'chisq', 'M_it'))
+				# 	for k in peaks:
+				# 		print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5f}'.format(k[0],k[1], k[2], k[3]))
+				# else : 
+				# 	# if M_it isn't defined.
+				# 	print('{0: >5s}, {1: >5s}, {2: >7s}'.format('loc', 'tau', 'chisq'))
+				# 	for k in peaks:
+				# 		print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k[0],k[1], k[2]))
+
 				ax.cla()
 				ax.set_title('raw data, channel no. %i : (%i, %i)' 
 					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
@@ -1146,8 +1168,9 @@ class Sensor(object):
 
 				if pk :
 					# take peak objects only inside of the window we are plotting, determined by 'lr' tuple
-					peaks_indices = [j.index for j in self.pix[i].peaks if (j.index < lr[1] and j.index > lr[0])]
-					ax.scatter(peak_indices, self.pix[i].data[peak_indices], color='r', marker ='x')
+					for j in peaks :
+						if (j.index  < lr[1] and j.index > lr[0]):
+							ax.scatter(j.index, self.pix[i].data[j.index], color='r', marker ='x')
 
 				if fit :
 					# impose a scatter plot for each fitted peak onto the raw data.
@@ -1156,7 +1179,7 @@ class Sensor(object):
 						if (j.index + Pixel.fit_length  < lr[1] and j.index > lr[0]) :
 							ax.scatter(j.fit_pts + j.index, 
 								model_func(j.fit_pts, *j.fit_par), 
-								marker='o', color = 'g')
+								marker = 'o', color = 'g')
 
 				# now plot the filtered data.		
 				ax2.cla()
@@ -1166,7 +1189,9 @@ class Sensor(object):
 				
 				# superimpose peaks if desired.
 				if pk :
-					ax2.scatter(peak_indices, self.pix[i].filt[peak_indices], marker ='x', color='r')
+					for j in peaks :
+						if (j.index  < lr[1] and j.index > lr[0]):
+							ax2.scatter(j.index, self.pix[i].filt[j.index], color='r', marker ='x')
 				
 				if us_pt :
 
@@ -1633,17 +1658,17 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = 2, thresh_us=0.002, option='diff') :
+	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = 2, thresh_us=0.002, squeeze=2 option='diff') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
 		This is important because the trapezoidal voltage summation is sensitive to error in M.
 		
 		observation: 
-		1. if M is smaller than the true tau, 
+		1. if M is bigger than the true tau, 
 		there is undershoot and the flat top bulges on the left side.
 		
-		2. if M is bigger than the true tau, 
+		2. if M is smaller than the true tau, 
 		there is overshoot and the flat top bulges on the right side.
 
 		the flat-top peak is referred to as 'bump' below in the algorithm.
@@ -1668,6 +1693,25 @@ class Pixel(object):
 		# initialize new M we get from iteration.
 		# for pk in self.peaks :
 		# 	pk.M_it = pk.tau
+
+
+		# improve M by measuring symmetry of both k-ramps (the legs of the trapezoid, each with k-samples).
+		if option == 'symm' :
+
+			npk = len(self.peaks)
+
+
+			# 'squeeze' removes a specified number of points from each side of the ramp.
+			# should we calculate average or just the sum...?
+			for pk in self.peaks :
+
+				rise = np.sum(self.filt[pk.index + squeeze : pk.index + Pixel.k - squeeze])
+				fall = np.sum(self.filt[pk.index + Pixel.l + squeeze : pk.index + Pixel.l + Pixel.k - squeeze])
+
+
+				# if sym is positive 'blah', if it's negative then 'blah'
+				sym = rise-fall
+
 
 		# improve M by using flat top peaking
 		if option == 'bump' :
@@ -1887,25 +1931,31 @@ class Pixel(object):
 				print('"avg_off" requires 3 elements, one for offsetting each part of the waveform:')
 				print('Before the trapezoid, during the flat top, and after the trapezoid.')
 
-	def enter_peaks(self) :
+	def enter_peaks(self, auto=True) :
 
 
 		''' function to quickly enter M values into peaks via command line, for purposes of testing.
 		'''
 
-		i = 0
-		for pk in self.peaks :
-			i+=1
-			print('peak %i index: %i tau: %f chisq: %f' % (i, pk.index, pk.tau, pk.chisq))
 
-			while True :
-				try :
-					val = float(input('enter an M value. \n'))
-					break
-				except ValueError :
-					print('enter a variable with type "int" or "float". \n')
-			pk.tau = val
-			pk.M_it = val
+		if auto:
+			for pk in self.peaks:
+				pk.M_it = pk.tau
+
+		else:
+			i = 0
+			for pk in self.peaks :
+				i+=1
+				print('peak %i index: %i tau: %f chisq: %f' % (i, pk.index, pk.tau, pk.chisq))
+
+				while True :
+					try :
+						val = float(input('enter an M value. \n'))
+						break
+					except ValueError :
+						print('enter a variable with type "int" or "float". \n')
+				pk.tau = val
+				pk.M_it = val
 
 			
 	def calc_urs(self, npt_avg, avg_off):
@@ -1978,6 +2028,8 @@ class Peak(object):
 
 		self.index = index
 		self.tau = None
+		self.fit_pts = None
+		self.fit_par = None
 		self.M_it = None # this M we get from iterating to minimize the undershoot / overshoot
 		self.chisq = None
 		self.shoot = None
