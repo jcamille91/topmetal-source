@@ -354,7 +354,7 @@ class Sensor(object):
 			# M_loc = np.array([50000])
 			# M_a = np.array([1])
 
-			M_i = np.array([40, 20, 30, 50], dtype=np.float64)
+			M_i = np.array([40, 20, 30, 10], dtype=np.float64)
 			M_loc = np.array([1000, 3000, 5000, 8000])
 			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
 			M_a = np.array([0.015, 0.015, 0.015, 0.015])
@@ -1658,7 +1658,7 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = 2, thresh_us=0.002, squeeze=2 option='diff') :
+	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = -2, t_os=0.0001, t_us = 0.0001,  thresh_us=0.0001, squeeze=0, option='symm_test') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
@@ -1695,23 +1695,61 @@ class Pixel(object):
 		# 	pk.M_it = pk.tau
 
 
-		# improve M by measuring symmetry of both k-ramps (the legs of the trapezoid, each with k-samples).
-		if option == 'symm' :
-
-			npk = len(self.peaks)
-
-
-			# 'squeeze' removes a specified number of points from each side of the ramp.
-			# should we calculate average or just the sum...?
+		# improve M by measuring symmetry of both k-ramps (the legs of the trapezoid, each has k-samples).
+		if option == 'symm_test' :
+			
+			go = len(self.peaks)
+			
 			for pk in self.peaks :
 
-				rise = np.sum(self.filt[pk.index + squeeze : pk.index + Pixel.k - squeeze])
-				fall = np.sum(self.filt[pk.index + Pixel.l + squeeze : pk.index + Pixel.l + Pixel.k - squeeze])
+				pk.pre = np.arange(pk.index + squeeze + avg_off, pk.index + Pixel.k - squeeze + avg_off)
+				pk.flat= np.arange(pk.index + Pixel.k + avg_off, pk.index + Pixel.l + avg_off)
+				pk.post = np.arange(pk.index + Pixel.l + squeeze + avg_off, pk.index + Pixel.l + Pixel.k - squeeze + avg_off)
+
+				rise = np.sum(self.filt[pk.index + squeeze + avg_off : pk.index + Pixel.k - squeeze + avg_off])
+				fall = np.sum(self.filt[pk.index + Pixel.l + squeeze + avg_off : pk.index + Pixel.l + Pixel.k - squeeze + avg_off])
 
 
 				# if sym is positive 'blah', if it's negative then 'blah'
 				sym = rise-fall
 
+				if sym > t_us : # there is undershoot
+					pk.M_it -= step_it
+					go -=1
+				elif sym < -1*t_os : # there is overshoot
+					pk.M_it += step_it
+					go -=1
+				else :
+					pass
+
+				print('M=%f, M_it=%f, sym=%f, go=%i' % (pk.tau, pk.M_it, sym, go))
+				self.filter_peaks(iter=True)
+
+		if option == 'symm' :
+
+			npk = len(self.peaks)
+			nit = max_it
+
+			while(nit) :
+				
+				nit -= 1
+				# 'squeeze' removes a specified number of points from each side of the ramp.
+				# should we calculate average or just the sum...?
+				for pk in self.peaks :
+
+					rise = np.sum(self.filt[pk.index + squeeze : pk.index + Pixel.k - squeeze])
+					fall = np.sum(self.filt[pk.index + Pixel.l + squeeze : pk.index + Pixel.l + Pixel.k - squeeze])
+
+
+					# if sym is positive 'blah', if it's negative then 'blah'
+					sym = rise-fall
+
+					if sym > thresh_us : # there is undershoot
+						pk.M_it += step_it
+					elif sym < -1*thresh_us : # there is overshoot
+						pk.M_it -= step_it
+					print('M=%f, M_it=%f, us/os=%f, go=%i' % (pk.tau, pk.M_it, pk.shoot, go))
+				self.filter_peaks(iter=True)
 
 		# improve M by using flat top peaking
 		if option == 'bump' :
@@ -1951,11 +1989,13 @@ class Pixel(object):
 				while True :
 					try :
 						val = float(input('enter an M value. \n'))
+						index = int(input('enter a peak location. \n'))
 						break
 					except ValueError :
-						print('enter a variable with type "int" or "float". \n')
-				pk.tau = val
+						print('peak location and M value must have type "int" or "float". \n')
+
 				pk.M_it = val
+				pk.index = index
 
 			
 	def calc_urs(self, npt_avg, avg_off):
