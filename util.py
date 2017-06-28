@@ -354,10 +354,10 @@ class Sensor(object):
 			# M_loc = np.array([50000])
 			# M_a = np.array([1])
 
-			M_i = np.array([40, 20, 30, 10], dtype=np.float64)
+			M_i = np.array([40, 30, 20, 10], dtype=np.float64)
 			M_loc = np.array([1000, 3000, 5000, 8000])
 			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
-			M_a = np.array([0.015, 0.015, 0.015, 0.015])
+			M_a = np.array([0.008, 0.008, 0.008, 0.008])
 
 			# three stacked pulses, let's see if the vsum calibration works if the response is no longer trapezoidal.
 			# M_i = np.array([40, 40, 40, 40], dtype=np.float64)
@@ -409,13 +409,15 @@ class Sensor(object):
 		self.pix.append(Pixel(0, signal, baseline, mV_noise*0.001))
 
 	def analyze(self, read=False, simple = False, select = [], noisethresh = 0.002,
-				sign = 1, minsep = 50, threshold = 0.006, sgwin = 15, sgorder = 4, 		   # peak det
+				
+				sign = 1, minsep = 50, threshold = 0.006, 								   # peak detection						
+				sgwin = 15, sgorder = 4, l_s=4, k_s=2, choose='sg',		  			 
 			    
 			    fit_length = 300, fudge = 20, 											   # lsq fit
 			    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
 			    guess = [0.008, 1.0, 0],						   				   		   # amplitude, 1/tau, offset
 			    
-			    l = 60, k = 20, M_def = float(40), shaper_offset = -20):  				   # shaper
+			    l = 60, k = 20, M_def = float(30), shaper_offset = -20):  				   # shaper
 
 		''' analysis chain: 
 		1. find peaks 
@@ -440,7 +442,12 @@ class Sensor(object):
 		only the first peak candidate is saved.
 		-threshold : minimum value for accepted peaks. candidate peaks
 		with max value smaller than the threshold are rejected.
-		
+		-l_s, k_s : these are filter parameters for the trapezoidal filter, if it's to be used for peak detection. 
+		It's meant generally for optimizing SNR for signal measurement and zeroing the pixels, but it may have potential for peak detection.
+		Here, the trapezoidal filter should be use small l-k and k. the skinny flat top zeros the signal well and most importantly,
+		can identify constituent peaks of a larger apparent peak while also making it possible to accurately find the
+		very beginning of the signal rise.
+
 		*** sgwin and sgorder are filter parameters for smoothing the data with a savitsky-golay filter
 		before peak detection. derivative based peak detection on noisy signals requires smoothing. ***
 
@@ -489,7 +496,9 @@ class Sensor(object):
 		Pixel.minsep = minsep
 		Pixel.sgwin = sgwin
 		Pixel.sgorder = sgorder
-
+		Pixel.l_s = l_s
+		Pixel.k_s = k_s
+		Pixel.pd_choose = choose
 
 		Pixel.fudge = fudge
 		Pixel.fit_length = fit_length
@@ -503,13 +512,21 @@ class Sensor(object):
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset # this should generally be negative
 
-		# let's define a peak object for a 'no peak' channel just once, so it can be reused.
+		# define a peak object for a 'no peak' channel just once, so it can be reused.
 		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l
 		k_arr = np.ones(1, dtype = c_ulong)*Pixel.k	
 		LEFT = np.array(0, dtype = c_ulong)
 		RIGHT = np.array(self.daq_length, dtype = c_ulong)		
 		M = np.array(M_def)
 		Pixel.zero_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M)
+
+		# define a peak object for 'skinny' trapezoidal filter parameters. this is used for peak detection.
+		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l_s
+		k_arr = np.ones(1, dtype = c_ulong)*Pixel.k_s
+		LEFT = np.array(0, dtype = c_ulong)
+		RIGHT = np.array(self.daq_length, dtype = c_ulong)		
+		M = np.array(M_def)
+		Pixel.skinny_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M)
 
 		print('analysis parameters... \n')
 		print('peak detection: sign = %i, threshold = %i, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
@@ -1071,7 +1088,7 @@ class Sensor(object):
 			fig.show()
 
 
-	def plot_waveform(self, pixels=[], choose='b', avg=True, pk = True, fit = False, lr = None, us_pt = False) :
+	def plot_waveform(self, pixels=[], choose='b', avg=True, pk = True, fit = False, pd = False, lr = None, us_pt = False) :
 		'''
 		This function can plot a series of channels. When the user
 		presses 'Enter', the next channel's plot is replaces the prior.
@@ -1104,10 +1121,13 @@ class Sensor(object):
 		ax = fig.add_subplot(111)
 		ax.set_title("multich plot")
 		ax.set_xlim(lr)
-		# ax.step(x, np.zeros(datalen))
-
 		fig.show()
-		# ax.figure.canvas.draw()
+
+		if pd :
+			fig3, ax3 = plt.subplots(1,1)
+			ax3.set_title("multich plot")
+			ax3.set_xlim(lr)
+			fig3.show()
 
 		# plot raw data and filtered data.
 		if (choose == 'b') :
@@ -1201,10 +1221,25 @@ class Sensor(object):
 						ax2.scatter(pk.flat, self.pix[i].filt[pk.flat], marker ='x', color='indigo')
 						ax2.scatter(pk.post, self.pix[i].filt[pk.post], marker ='x', color='orange')
 
+				if pd :
+				
+					ax3.cla()
+					ax3.set_title('peak det filtered data, channel no. %i : (%i, %i)' 
+					% (i, self.pix[i].loc[0], self.pix[i].loc[1]))
+
+					# plot desired slice of data.
+					ax3.step(x, self.pix[i].pd_filt[lr[0]:lr[1]], color='b')
+
+					if pk :
+						# take peak objects only inside of the window we are plotting, determined by 'lr' tuple
+						for j in peaks :
+							if (j.index  < lr[1] and j.index > lr[0]):
+								ax3.scatter(j.index, self.pix[i].pd_filt[j.index], color='r', marker ='x')
+
 				# ax is raw data, ax2 is filtered data.
 				ax.figure.canvas.draw()
 				ax2.figure.canvas.draw()
-
+				ax3.figure.canvas.draw()
 		# plot the raw data.
 		elif (choose == 'd') :
 			print('plotting raw data')
@@ -1378,6 +1413,8 @@ class Pixel(object):
 
 	def peak_det(self):
 		''' 
+		input : 
+		-choose: choose between using savitsky-golay filter or trapezoidal filter with tiny l-k and k. 
 		relevant pixel attributes:
 		- data : numpy array with peaks to look for.
 		- mean: average value of 'data'.
@@ -1397,7 +1434,15 @@ class Pixel(object):
 		- trig(optional) : namedtuple for testing each step of peak detection if desired.
 		'''	
 
-		f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
+		if Pixel.pd_choose == 'sg' : # savitsky-golay filter
+			f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
+
+		elif Pixel.pd_choose == 'skinny' : # trapezoidal filter with l-k and k both very small (<5)
+			f = np.empty_like(self.data)
+			Pixel.shp_lib.shaper_multi(self.data, f, c_ulong(len(self.data)), byref(Pixel.skinny_pk), c_double(self.avg))
+			f = np.array(f)
+			self.pd_filt = f
+
 		kernel = [1, 0, -1]	# calculate each derivative
 		df = convolve(f, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
 		dfn = np.sign(df) # normalize derivative to 1. 1 increasing, -1 decreasing, 0 const.
@@ -1442,7 +1487,7 @@ class Pixel(object):
 
 		# pkm = peaks with minimum separation discrimination.
 		# pk = peaks without minimum separation discrimination.
-		pkm = np.delete(pk, toss)
+		pkm = np.delete(pk, toss) - (len(kernel)-1)
 
 		# cons = 5 # consecutively increasing values preceeding a peak
 		# for j in range(len(pkm))
@@ -1658,7 +1703,7 @@ class Pixel(object):
 
 		return (LEFT, RIGHT)
 
-	def iter_M(self, step_it = 1, max_it = 30, npt_avg = 10, avg_off = -2, t_os=0.0001, t_us = 0.0001,  thresh_us=0.0001, squeeze=0, option='symm_test') :
+	def iter_M(self, step_it = 1, max_it = 30, tail=50, midflat=0, npt_avg = 10, avg_off = -2, t_os=0.0001, t_us = 0.0001,  thresh_us=0.0001, squeeze=0, option='symm_test') :
 		'''
 		a function to iteratively correct the M values used for each peak.
 		increases or decreases M to minimize the undershoot / overshoot.
@@ -1725,6 +1770,34 @@ class Pixel(object):
 				print('M=%f, M_it=%f, sym=%f, go=%i' % (pk.tau, pk.M_it, sym, go))
 				self.filter_peaks(iter=True)
 
+		if option == 'symm_test2' :
+			
+			go = len(self.peaks)
+			
+			for pk in self.peaks :
+
+				pk.pre = np.arange(pk.index - tail + avg_off, pk.index + Pixel.k + midflat + avg_off)
+				pk.flat= np.arange(pk.index + Pixel.k + avg_off, pk.index + Pixel.l + avg_off)
+				pk.post = np.arange(pk.index + Pixel.l - midflat + avg_off, pk.index + Pixel.l + Pixel.k + tail + avg_off)
+
+				rise = np.sum(self.filt[pk.index - tail + avg_off : pk.index + Pixel.k + midflat + avg_off])
+				fall = np.sum(self.filt[pk.index + Pixel.l - midflat + avg_off: pk.index + Pixel.l + Pixel.k + tail + avg_off])
+
+
+				# if sym is positive 'blah', if it's negative then 'blah'
+				sym = rise-fall
+
+				if sym > t_us : # there is undershoot
+					pk.M_it -= step_it
+					go -=1
+				elif sym < -1*t_os : # there is overshoot
+					pk.M_it += step_it
+					go -=1
+				else :
+					pass
+
+				print('M=%f, M_it=%f, sym=%f, go=%i' % (pk.tau, pk.M_it, sym, go))
+				self.filter_peaks(iter=True)
 		if option == 'symm' :
 
 			npk = len(self.peaks)
