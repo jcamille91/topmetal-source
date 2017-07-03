@@ -85,12 +85,6 @@ c_double_p = POINTER(c_double)
 class peaks_t(Structure):
 	_fields_ = [("nPk", c_ulong), ("LEFT", c_ulong_p), ("RIGHT", c_ulong_p),
 				("l", c_ulong_p), ("k", c_ulong_p), ("M", c_double_p)]
-# #class peak()
-# 	### stuff to put inside this class. ###
-# 	location
-# 	M
-# 	chisq
-# 	height
 
 def	peaks_handle(nPk, left, right, l, k, M):
 
@@ -413,7 +407,7 @@ class Sensor(object):
 				sign = 1, minsep = 50, threshold = 0.006, 								   # peak detection						
 				sgwin = 15, sgorder = 4, l_s=4, k_s=2, choose='sg',		  			 
 			    
-			    fit_length = 300, fudge = 20, 											   # lsq fit
+			    fit_length = 300, fudge = 20, Mrange = [10.0,45.0],							   # lsq fit
 			    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
 			    guess = [0.008, 1.0, 0],						   				   		   # amplitude, 1/tau, offset
 			    
@@ -433,7 +427,7 @@ class Sensor(object):
 		-noisethresh : threshold in volts to classify channels. channels above this value are labeled with
 		a string  as 'noisy'.
 
-		(peak detection)
+		(PEAK DETECTION)
 
 		-sign : this allows peak detection algorithm to handle '+' or '-' data. 
 		postitive data with peaks -> sign = 1
@@ -447,6 +441,8 @@ class Sensor(object):
 		Here, the trapezoidal filter should be use small l-k and k. the skinny flat top zeros the signal well and most importantly,
 		can identify constituent peaks of a larger apparent peak while also making it possible to accurately find the
 		very beginning of the signal rise.
+		-pd_choose : choose 'sg' savitsky-golay or 'skinny' trapezoidal filter to smooth raw data for peak det.
+
 
 		*** sgwin and sgorder are filter parameters for smoothing the data with a savitsky-golay filter
 		before peak detection. derivative based peak detection on noisy signals requires smoothing. ***
@@ -457,7 +453,7 @@ class Sensor(object):
 	
 
 
-		(tau fitting)
+		(TAU FITTING)
 
 		-fit_length : number of datapoints to fit. generally (2-3) expected tau in length.
 		-fudge : if consecutive peaks are closer than fit_length, the procedure fits the 
@@ -468,8 +464,10 @@ class Sensor(object):
 		values can speed up the fit process. the baseline for each pixel offsets the amplitude and offset fit parameters. 
 		FORMAT: [(amplitude, 1/tau, offset)min, (amplitude, 1/tau, offset)max]
 		-guess: inital guess for exponential fit parameters. [amplitude, 1/tau, offset]
- 
-		(trapezoidal filter)
+ 		-Mrange : this specifies how to split up three categories for detected peaks. lower than the
+ 		first argument is a noise peak. longer than the second argument is multiple peaks in close proximity.
+		
+		(TRAPEZOIDAL FILTER)
 
 		-l, k, M : trapezoidal filter parameters. 
 		 l-k specifies the flat-top duration.
@@ -487,6 +485,7 @@ class Sensor(object):
 
 		'''
 		# these 'Pixel' class attributes are used by methods for analysis.
+		# we're setting the namespace (the 'Pixel' class) for all of the analysis functions here.
 		# main three 'Pixel' methods are : peak_det(), fit_pulses(), filter_peaks().
 		Pixel.daq_length = self.daq_length 
 		Pixel.noisethresh = 0.002
@@ -502,7 +501,7 @@ class Sensor(object):
 
 		Pixel.fudge = fudge
 		Pixel.fit_length = fit_length
-
+		Pixel.Mrange = Mrange
 		# these get offset by each pixel's average voltage (baseline) when the pixel object is initialized.
 		Pixel.fit_bounds = np.array(bounds)
 		Pixel.fit_guess = np.array(guess)
@@ -1117,17 +1116,21 @@ class Sensor(object):
 		datalen = len(x)
 
 		# setup
+
+		# for raw data
 		fig = plt.figure()
 		ax = fig.add_subplot(111)
 		ax.set_title("multich plot")
 		ax.set_xlim(lr)
 		fig.show()
 
-		if pd :
-			fig3, ax3 = plt.subplots(1,1)
-			ax3.set_title("multich plot")
-			ax3.set_xlim(lr)
-			fig3.show()
+		# for filtered data
+
+		# for peak detection filtered data
+		fig3, ax3 = plt.subplots(1,1)
+		ax3.set_title("multich plot")
+		ax3.set_xlim(lr)
+		fig3.show()
 
 		# plot raw data and filtered data.
 		if (choose == 'b') :
@@ -1436,7 +1439,7 @@ class Pixel(object):
 
 		if Pixel.pd_choose == 'sg' : # savitsky-golay filter
 			f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
-
+			self.pd_filt = f
 		elif Pixel.pd_choose == 'skinny' : # trapezoidal filter with l-k and k both very small (<5)
 			f = np.empty_like(self.data)
 			Pixel.shp_lib.shaper_multi(self.data, f, c_ulong(len(self.data)), byref(Pixel.skinny_pk), c_double(self.avg))
@@ -1585,12 +1588,25 @@ class Pixel(object):
 				# determined by the number of peaks found in peak detection.
 				# insert the fitted tau and chisquare to their respective peak.
 				self.peaks[j].tau = 1.0/par[1]
+
+				# assign identifying string based on tau value.
+				if self.peaks[j].tau < Pixel.Mrange[0] :
+					self.peaks[j].id = 'noise'
+
+				elif self.peaks[j].tau > Pixel.Mrange[1] :
+					self.peaks[j].id = 'multi'
+
+				else :
+					self.peaks[j].id = 'single'
+
 				self.peaks[j].chisq = chisq
 				
 				# these attributes can be saved to plot fits.
 				self.peaks[j].fit_par = par
 				self.peaks[j].fit_pts = xi
 				
+
+
 				# Q and p values.
 				# P[j] = pval
 				# Q[j] = 1-pval
@@ -1628,7 +1644,9 @@ class Pixel(object):
 		-iter : filter the data using the the newly iterated value of M
 		 '''
 
-		npk = len(self.peaks)
+		# only filter peaks if they have tau values in the range we're interested in.
+		peaks = [i for i in self.peaks if i.id == 'single']
+		npk = len(peaks)
 
 		# no peaks found or if skipping peak detection and fitting ('simple' option), use default M. 
 		if (npk == 0 or simple == True) : # no peaks found, use default M.
@@ -1640,9 +1658,9 @@ class Pixel(object):
 			LEFT = np.array(0, dtype = c_ulong)
 			RIGHT = np.array(Pixel.daq_length, dtype = c_ulong)
 			if iter :
-				M = np.array([i.M_it for i in self.peaks])
+				M = np.array([i.M_it for i in peaks])
 			else :			
-				M = np.array([i.tau for i in self.peaks])
+				M = np.array([i.tau for i in peaks])
 			PEAK = peaks_handle(npk, LEFT, RIGHT, l_arr, k_arr, M)
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
 
@@ -1659,9 +1677,9 @@ class Pixel(object):
 			# print('LEFT = ', LR[0])
 			# print('RIGHT = ', LR[1])
 			if iter :
-				M = np.array([i.M_it for i in self.peaks])
+				M = np.array([i.M_it for i in peaks])
 			else :			
-				M = np.array([i.tau for i in self.peaks])
+				M = np.array([i.tau for i in peaks])
 			# peaks_handle prepares a Ctypes 'Structure' object to make a C Structure.
 			PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
 			# self.filt = np.empty_like(self.data)
@@ -1798,6 +1816,39 @@ class Pixel(object):
 
 				print('M=%f, M_it=%f, sym=%f, go=%i' % (pk.tau, pk.M_it, sym, go))
 				self.filter_peaks(iter=True)
+
+		if option == 'symm_test3' :
+			
+
+			# for this option, let's try and compare to only the original values, which we will save.
+			# 
+
+			go = len(self.peaks)
+			
+			for pk in self.peaks :
+
+				pk.pre = np.arange(pk.index - tail + avg_off, pk.index + Pixel.k + midflat + avg_off)
+				pk.flat= np.arange(pk.index + Pixel.k + avg_off, pk.index + Pixel.l + avg_off)
+				pk.post = np.arange(pk.index + Pixel.l - midflat + avg_off, pk.index + Pixel.l + Pixel.k + tail + avg_off)
+
+				rise = np.sum(self.filt[pk.index - tail + avg_off : pk.index + Pixel.k + midflat + avg_off])
+				fall = np.sum(self.filt[pk.index + Pixel.l - midflat + avg_off: pk.index + Pixel.l + Pixel.k + tail + avg_off])
+
+
+				# if sym is positive 'blah', if it's negative then 'blah'
+				sym = rise-fall
+
+				if sym > t_us : # there is undershoot
+					pk.M_it -= step_it
+					go -=1
+				elif sym < -1*t_os : # there is overshoot
+					pk.M_it += step_it
+					go -=1
+				else :
+					pass
+
+				print('M=%f, M_it=%f, sym=%f, go=%i' % (pk.tau, pk.M_it, sym, go))
+				self.filter_peaks(iter=True)	
 		if option == 'symm' :
 
 			npk = len(self.peaks)
@@ -2134,6 +2185,15 @@ class Peak(object):
 		attributes:
 		-index: location in dataset of peak. (maximum value)
 		-tau: decay constant extracted by least-squares fit.
+		
+		-id : this string identifies three types of detected peaks.
+		1. 'noise' are peaks with very short time constants, they're just large and quick jitters due to noise,
+		not the characteristic impulse response of the CSA.
+		2. 'single' are peaks with time constants of 15-50 samples. the variance is due to different
+		Rf for each pixel, and the error in fitting these pulses.
+		3. 'multi' are peaks with exceptionally long fall times. so far, it looks like all of these are constituent peaks
+		happening in close proximity. We can find these constituent peaks' locations with a very small l-k trapezoidal filter.
+
 		-chisq : chi-square value from least-squares fit
 		-shoot : undershoot / overshoot due to trapezoidal filtering.
 		positive value -> overshoot (tau is too small), negative value -> undershoot (tau is too big)
@@ -2141,6 +2201,7 @@ class Peak(object):
 
 		self.index = index
 		self.tau = None
+		self.id = None
 		self.fit_pts = None
 		self.fit_par = None
 		self.M_it = None # this M we get from iterating to minimize the undershoot / overshoot
