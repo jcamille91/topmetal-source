@@ -320,7 +320,10 @@ class Sensor(object):
 		# define number of points for dataset.
 		# make sure there are enough points to accomodate 
 		# whatever features are defined below.
-		self.daq_length = 10000
+		self.daq_length = 100000
+		
+		# number of points defining each pulse.
+		M_npt = 1000
 
 		# signal baseline and noise.
 		baseline = 0.8
@@ -340,27 +343,33 @@ class Sensor(object):
 
 		if choose == 'exp' :
 
-			# specify M=tau, peak location, amplitude, and the number of points to define
-			# the peak.
+			# specify M=tau, peak location, amplitude, and the number of points to define the peak.
 			
-			# one pulse
+			#### one pulse
 			# M_i = np.array([40], dtype=np.float64)
 			# M_loc = np.array([50000])
 			# M_a = np.array([1])
 
-			M_i = np.array([40, 30, 20, 10], dtype=np.float64)
-			M_loc = np.array([1000, 3000, 5000, 8000])
-			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
-			M_a = np.array([0.008, 0.008, 0.008, 0.008])
+			#### a few pulses with different parameters
+			# M_i = np.array([40, 30, 20, 10], dtype=np.float64)
+			# M_loc = np.array([1000, 3000, 5000, 8000])
+			# # M_a = np.array([0.02, 0.015, 0.011, 0.015])
+			# M_a = np.array([0.008, 0.008, 0.008, 0.008])
 
-			# three stacked pulses, let's see if the vsum calibration works if the response is no longer trapezoidal.
+			#### variable number of pulses with same tau and amplitude
+			n = 20
+			M_i = np.ones(n, dtype=np.float64)*20
+			M_loc = np.arange(start=M_npt, stop=self.daq_length-2*M_npt, step = int((self.daq_length-4*M_npt)/n))
+			M_a = np.ones(n)*0.008
+
+			#### three stacked pulses, 
+			####let's see if the vsum calibration works if the response is no longer trapezoidal.
 			# M_i = np.array([40, 40, 40, 40], dtype=np.float64)
 			# M_loc = np.array([10000, 10040, 50000, 80000])
 			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
 
 
 			npk = len(M_i)
-			M_npt = 1000 # number of points defining pulse
 
 			# build an array with exponentially decaying pulses just defined above.
 			exp = np.ones(self.daq_length, dtype=np.float64)*baseline
@@ -402,14 +411,15 @@ class Sensor(object):
 
 		self.pix.append(Pixel(0, signal, baseline, mV_noise*0.001))
 
-	def analyze(self, read=False, simple = False, select = [], noisethresh = 0.002,
+	def analyze(self, read=False, simple = False, select = [],
 				
 				sign = 1, minsep = 50, threshold = 0.006, 								   # peak detection						
-				sgwin = 15, sgorder = 4, l_s=4, k_s=2, choose='sg',		  			 
+				sgwin = 15, sgorder = 4, l_s=4, k_s=2, choose='sg',		
+				pd_save = 0,  			 
 			    
 			    fit_length = 300, fudge = 20, Mrange = [10.0,45.0],							   # lsq fit
 			    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
-			    guess = [0.008, 1.0, 0],						   				   		   # amplitude, 1/tau, offset
+			    guess = [0.008, 1.0/20, 0],						   				   		   # amplitude, 1/tau, offset
 			    
 			    l = 60, k = 20, M_def = float(30), shaper_offset = -20):  				   # shaper
 
@@ -488,7 +498,6 @@ class Sensor(object):
 		# we're setting the namespace (the 'Pixel' class) for all of the analysis functions here.
 		# main three 'Pixel' methods are : peak_det(), fit_pulses(), filter_peaks().
 		Pixel.daq_length = self.daq_length 
-		Pixel.noisethresh = 0.002
 
 		Pixel.sign = sign
 		Pixel.threshold = threshold
@@ -498,6 +507,7 @@ class Sensor(object):
 		Pixel.l_s = l_s
 		Pixel.k_s = k_s
 		Pixel.pd_choose = choose
+		Pixel.pd_save = pd_save
 
 		Pixel.fudge = fudge
 		Pixel.fit_length = fit_length
@@ -679,31 +689,6 @@ class Sensor(object):
 		else :
 			print('number of lists of peaks:', len(peaks), 'does not match number of pixels:', self.nch)
 			print('cannot load peaks if these numbers do not match')
-
-
-	def cal_check(self, selection=[]) :
-		'''
-		let's observe how an exponential pulse is mapped to a voltage summation.
-		there are three parts of the trapezoidal response we add, the two slopes and the flat top.
-
-		(l-k)*amplitude
-		((amplitude)/k)
-
-		'''
-
-		for ev in event:
-			sel = ev.retrieve_selection()
-			evstart = ev.i
-			for i in sel :
-				for peak in self.pix[i].peaks :
-					flttop = (Pixel.l-Pixel.k)
-
-
-
-		# flat top summation
-		fltop = (Pixel.l-Pixel.k) * A
-		# sum on 'n' 'from 0 to k' ramp summation, twice for up and down slopes.
-		ramp = 2*(A/Pixel.k)*(Pixel.k*(Pixel.k+1)/2)
 		
 	def vsum_all(self, nbins = 100, start=0, stop=None, use_events=True, nframe=None, axis=0):
 		'''
@@ -1154,15 +1139,15 @@ class Sensor(object):
 
 
 				try : # if M_it is defined.
-					print('{0: >5s}, {1: >5s}, {2: >7s}, {3: >7s}'.format('loc', 'tau', 'chisq', 'M_it'))
+					print('{0: >5s}, {1: >5s}, {2: >7s}, {3: >7s}, {4: >5s}'.format('loc', 'tau', 'chisq', 'M_it', 'type'))
 					for k in peaks:
-						print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5f}'.format(k.index,k.tau, k.chisq, k.M_it))
+						print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5f}, {4: >5s}'.format(k.index,k.tau, k.chisq, k.M_it, k.id))
 					print('\n')
 
 				except (IndexError, TypeError) as e : # M_it isn't defined.
-					print('{0: >5s}, {1: >5s}, {2: >7s}'.format('loc', 'tau', 'chisq'))
+					print('{0: >5s}, {1: >5s}, {2: >7s}, {3: 5s}'.format('loc', 'tau', 'chisq', 'type'))
 					for k in peaks:
-						print('{0: >5d}, {1: >5f}, {2: >5f}'.format(k.index,k.tau, k.chisq))
+						print('{0: >5d}, {1: >5f}, {2: >5f}, {3: >5s}'.format(k.index,k.tau, k.chisq, k.id))
 					print('\n')
 
 				# if peaks[0][3] :
@@ -1403,16 +1388,6 @@ class Pixel(object):
 		self.avg = avg
 		self.rms = rms
 		self.peaks = []
-		self.tau = None
-		self.chisq = None
-		self.fit_par = None
-		self.fit_pts = None
-
-
-		# if (self.rms > Pixel.noisethresh) :
-		# 	self.type = 'noisy'
-		# else :
-		# 	self.type = None
 
 	def peak_det(self):
 		''' 
@@ -1439,12 +1414,10 @@ class Pixel(object):
 
 		if Pixel.pd_choose == 'sg' : # savitsky-golay filter
 			f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
-			self.pd_filt = f
 		elif Pixel.pd_choose == 'skinny' : # trapezoidal filter with l-k and k both very small (<5)
 			f = np.empty_like(self.data)
 			Pixel.shp_lib.shaper_multi(self.data, f, c_ulong(len(self.data)), byref(Pixel.skinny_pk), c_double(self.avg))
 			f = np.array(f)
-			self.pd_filt = f
 
 		kernel = [1, 0, -1]	# calculate each derivative
 		df = convolve(f, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
@@ -1506,6 +1479,10 @@ class Pixel(object):
 		# create a list of 'Peak' objects with these peak locations.
 		self.peaks = [Peak(i) for i in pkm]
 
+		# option to save the filtered data. Can plot this later to look at peak det results before 
+		# being imposed onto the raw data.
+		if Pixel.pd_save:
+			self.pd_filt = f
 	def fit_pulses(self):
 		'''
 		apply non-linear least squares fitting to one or multiple peaks on a given channel. use 'ax' to optionally
@@ -1573,8 +1550,9 @@ class Pixel(object):
 					# 	             bounds=bounds, method='trf')
 
 				par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, p0=self.guess, \
-					             sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
-					             bounds=self.bounds, method='trf')
+				sigma=np.ones(N)*self.rms, absolute_sigma=True, check_finite=False, \
+				bounds=self.bounds, method='trf')
+
 
 				# par, cov = curve_fit(f=model_func, xdata=xi, ydata=yi, \
 				# 		             sigma=np.ones(N)*rms, absolute_sigma=True, check_finite=False, \
@@ -1590,11 +1568,15 @@ class Pixel(object):
 				self.peaks[j].tau = 1.0/par[1]
 
 				# assign identifying string based on tau value.
+
+				# peaks with very small M tend to be noise spikes
 				if self.peaks[j].tau < Pixel.Mrange[0] :
 					self.peaks[j].id = 'noise'
-
+				
+				# peaks with large M tend to be made up of multiple constituent peaks
 				elif self.peaks[j].tau > Pixel.Mrange[1] :
 					self.peaks[j].id = 'multi'
+
 
 				else :
 					self.peaks[j].id = 'single'
@@ -1645,6 +1627,7 @@ class Pixel(object):
 		 '''
 
 		# only filter peaks if they have tau values in the range we're interested in.
+
 		peaks = [i for i in self.peaks if i.id == 'single']
 		npk = len(peaks)
 
@@ -1667,7 +1650,7 @@ class Pixel(object):
 		elif (npk > 1) : # multiple peaks found.
 			l_arr = np.ones(npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
-			LR = self.pk2LR()
+			LR = self.pk2LR(peaks, npk)
 
 			# leave this comment in to check values later if desired
 			# print('l', l)
@@ -1692,7 +1675,7 @@ class Pixel(object):
 
 		self.filt = np.array(self.filt)
 
-	def pk2LR(self) :
+	def pk2LR(self, peaks, npk) :
 	
 		''' put peak locations into arrays of left and rights for trapezoidal shaper.
 		 apply desired offset. Both arrays are the same length as input 'peaks' array.
@@ -1701,17 +1684,16 @@ class Pixel(object):
 		- LEFT and RIGHT : beginning and end points for each set of 
 		trapezoidal filter parameters l,k, and M.'''
 		
-		npk = len(self.peaks)
 
 		LEFT = np.zeros(npk)
 		RIGHT = np.zeros(npk)
 
 		for i in range(npk-1):
-			LEFT[i]  = self.peaks[i].index   + self.shaper_offset
-			RIGHT[i] = self.peaks[i+1].index + self.shaper_offset
+			LEFT[i]  = peaks[i].index   + self.shaper_offset
+			RIGHT[i] = peaks[i+1].index + self.shaper_offset
 			
 		LEFT[0] = 0
-		LEFT[npk-1] = self.peaks[npk-1].index + self.shaper_offset
+		LEFT[npk-1] = peaks[npk-1].index + self.shaper_offset
 		RIGHT[npk-1] = Pixel.daq_length
 
 		# trapezoidal filter uses size_t, or c_ulong, as its datatype
@@ -2121,19 +2103,6 @@ class Pixel(object):
 				pk.M_it = val
 				pk.index = index
 
-			
-	def calc_urs(self, npt_avg, avg_off):
-		'''
-		for every detected peak in the list of Peak objects, calculate the undershoot of the filtered data.
-		
-		input:
-		-npt_avg : number of points used to average the flat top against
-		the space after the trapezoidal response.
-		-avg_ft_off : number of points after the peak to average the flat top. 
-		this is in addition to k, the rise time of the trapezoidal response.
-		'''
-
-		a='dosomething'
 
 	def plot(self, choose, axis = 0, lr = None) :
 		''' 
@@ -2189,10 +2158,11 @@ class Peak(object):
 		-id : this string identifies three types of detected peaks.
 		1. 'noise' are peaks with very short time constants, they're just large and quick jitters due to noise,
 		not the characteristic impulse response of the CSA.
-		2. 'single' are peaks with time constants of 15-50 samples. the variance is due to different
+		2. 'single' are peaks with time constants of 15-50 samples. the variation is due to different
 		Rf for each pixel, and the error in fitting these pulses.
-		3. 'multi' are peaks with exceptionally long fall times. so far, it looks like all of these are constituent peaks
-		happening in close proximity. We can find these constituent peaks' locations with a very small l-k trapezoidal filter.
+		3. 'multi' are peaks with exceptionally long fall times. so far, it looks like all of these are multiple peaks
+		in close proximity. We can observe constituent peaks' locations with a very small l-k trapezoidal filter,
+		if l-k is larger they aren't observable.
 
 		-chisq : chi-square value from least-squares fit
 		-shoot : undershoot / overshoot due to trapezoidal filtering.
