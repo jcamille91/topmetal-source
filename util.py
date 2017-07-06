@@ -2,7 +2,8 @@
 
 # test for slow pieces of code
 import time
-
+# print out python data objects (class instances, lists, etc)
+import pprint
 # for importing data from HDF5 files into Numpy arrays
 import h5py 
 
@@ -351,16 +352,16 @@ class Sensor(object):
 			# M_a = np.array([1])
 
 			#### a few pulses with different parameters
-			# M_i = np.array([40, 30, 20, 10], dtype=np.float64)
-			# M_loc = np.array([1000, 3000, 5000, 8000])
-			# # M_a = np.array([0.02, 0.015, 0.011, 0.015])
-			# M_a = np.array([0.008, 0.008, 0.008, 0.008])
+			M_i = np.array([70, 70, 60, 5], dtype=np.float64)
+			M_loc = np.array([1000, 3000, 5000, 8000])
+			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
+			M_a = np.array([0.008, 0.008, 0.008, 0.008])
 
-			#### variable number of pulses with same tau and amplitude
-			n = 20
-			M_i = np.ones(n, dtype=np.float64)*20
-			M_loc = np.arange(start=M_npt, stop=self.daq_length-2*M_npt, step = int((self.daq_length-4*M_npt)/n))
-			M_a = np.ones(n)*0.008
+			#### variable number (n) of pulses with same tau and amplitude
+			# n = 20
+			# M_i = np.ones(n, dtype=np.float64)*20
+			# M_loc = np.arange(start=M_npt, stop=self.daq_length-2*M_npt, step = int((self.daq_length-4*M_npt)/n))
+			# M_a = np.ones(n)*0.008
 
 			#### three stacked pulses, 
 			####let's see if the vsum calibration works if the response is no longer trapezoidal.
@@ -530,15 +531,15 @@ class Sensor(object):
 		Pixel.zero_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M)
 
 		# define a peak object for 'skinny' trapezoidal filter parameters. this is used for peak detection.
-		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l_s
-		k_arr = np.ones(1, dtype = c_ulong)*Pixel.k_s
-		LEFT = np.array(0, dtype = c_ulong)
-		RIGHT = np.array(self.daq_length, dtype = c_ulong)		
-		M = np.array(M_def)
-		Pixel.skinny_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M)
+		l_arr2 = np.ones(1, dtype = c_ulong)*Pixel.l_s
+		k_arr2 = np.ones(1, dtype = c_ulong)*Pixel.k_s
+		LEFT2 = np.array(0, dtype = c_ulong)
+		RIGHT2 = np.array(self.daq_length, dtype = c_ulong)		
+		M2 = np.array(M_def)
+		Pixel.skinny_pk = peaks_handle(1, LEFT2, RIGHT2, l_arr2, k_arr2, M2)
 
 		print('analysis parameters... \n')
-		print('peak detection: sign = %i, threshold = %i, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
+		print('peak detection: sign = %i, threshold = %f, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
 			% (sign, threshold, minsep, sgwin, sgorder))
 		print('pulse fitting: fudge = %i, fit length = %i \n'  % (fudge, fit_length))
 		print('shaping filter: l = %i, k = %i, \n default M = %i, offset = %i \n' % (l, k, M_def, shaper_offset))
@@ -562,10 +563,18 @@ class Sensor(object):
 
 			# regular analysis
 			for i in ch:
+				#print(self.pix[i].__dict__)
 				print('channel no. %i' % i)
 				self.pix[i].peak_det()
+				print("pd done")
+				#self.pix[i].__dict__
+
 				self.pix[i].fit_pulses()
+				print('fit done')
+				print(self.pix[i].__dict__)
 				self.pix[i].filter_peaks()
+				print('filter done')
+
 
 			# just default filter bad channels
 			for i in Sensor.BAD :
@@ -577,6 +586,7 @@ class Sensor(object):
 				self.pix[i].peak_det()
 				self.pix[i].fit_pulses()
 				self.pix[i].filter_peaks()
+
 		
 		print('finished analyzing', len(self.pix), 'pixels.') 
 
@@ -1385,6 +1395,7 @@ class Pixel(object):
 		self.data = data
 		self.filt = np.empty_like(data) # it's nice to initialize here, because if we only do operations on some channels,
 		# having an array for every pixel will preserve the square shape of the array if we want to reform data anyways.
+		
 		self.avg = avg
 		self.rms = rms
 		self.peaks = []
@@ -1412,12 +1423,12 @@ class Pixel(object):
 		- trig(optional) : namedtuple for testing each step of peak detection if desired.
 		'''	
 
-		if Pixel.pd_choose == 'sg' : # savitsky-golay filter
-			f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
-		elif Pixel.pd_choose == 'skinny' : # trapezoidal filter with l-k and k both very small (<5)
-			f = np.empty_like(self.data)
-			Pixel.shp_lib.shaper_multi(self.data, f, c_ulong(len(self.data)), byref(Pixel.skinny_pk), c_double(self.avg))
-			f = np.array(f)
+		# if Pixel.pd_choose == 'sg' : # savitsky-golay filter
+		f = savgol_scipy(self.data, Pixel.sgwin, Pixel.sgorder) # smooth data
+		# elif Pixel.pd_choose == 'skinny' : # trapezoidal filter with l-k and k both very small (<5)
+		# 	f = np.empty_like(self.data)
+		# 	Pixel.shp_lib.shaper_multi(self.data, f, c_ulong(len(self.data)), byref(Pixel.skinny_pk), c_double(self.avg))
+		# 	f = np.array(f)
 
 		kernel = [1, 0, -1]	# calculate each derivative
 		df = convolve(f, kernel, 'valid') # note: each convolution cuts length of array by len(kernel)-1
@@ -1463,7 +1474,7 @@ class Pixel(object):
 
 		# pkm = peaks with minimum separation discrimination.
 		# pk = peaks without minimum separation discrimination.
-		pkm = np.delete(pk, toss) - (len(kernel)-1)
+		pkm = np.delete(pk, toss) #- (len(kernel)-1)
 
 		# cons = 5 # consecutively increasing values preceeding a peak
 		# for j in range(len(pkm))
@@ -1481,8 +1492,10 @@ class Pixel(object):
 
 		# option to save the filtered data. Can plot this later to look at peak det results before 
 		# being imposed onto the raw data.
-		if Pixel.pd_save:
-			self.pd_filt = f
+		# if Pixel.pd_save:
+		# 	self.pd_filt = f
+		# else :
+		# 	pass
 	def fit_pulses(self):
 		'''
 		apply non-linear least squares fitting to one or multiple peaks on a given channel. use 'ax' to optionally
@@ -1599,7 +1612,7 @@ class Pixel(object):
 
 			# remove the 'fake' peak now that we're done iterating over
 			# the fit procedure.
-
+			
 			self.peaks.pop()
 	
 	def peak_cut(self, tau_range, chisq_range) :
@@ -1627,30 +1640,34 @@ class Pixel(object):
 		 '''
 
 		# only filter peaks if they have tau values in the range we're interested in.
-
-		peaks = [i for i in self.peaks if i.id == 'single']
-		npk = len(peaks)
-
+		# print(peaks)
+		# print(npk)
+		pkchoose = [i for i in self.peaks if i.id == 'single']
+		npk = len(pkchoose)
+		for i in pkchoose :
+			print(i.index)
+		print('pkchoose = ', pkchoose, 'npk = ', npk)
+		print(Pixel.zero_pk)
 		# no peaks found or if skipping peak detection and fitting ('simple' option), use default M. 
 		if (npk == 0 or simple == True) : # no peaks found, use default M.
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(Pixel.zero_pk), c_double(self.avg))
-
+			print('reached this point for zero peak channel.')
 		elif (npk == 1) : # one peak found.
 			l_arr = np.ones(npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
 			LEFT = np.array(0, dtype = c_ulong)
 			RIGHT = np.array(Pixel.daq_length, dtype = c_ulong)
 			if iter :
-				M = np.array([i.M_it for i in peaks])
+				M = np.array([i.M_it for i in pkchoose])
 			else :			
-				M = np.array([i.tau for i in peaks])
+				M = np.array([i.tau for i in pkchoose])
 			PEAK = peaks_handle(npk, LEFT, RIGHT, l_arr, k_arr, M)
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(PEAK), c_double(self.avg))
 
 		elif (npk > 1) : # multiple peaks found.
 			l_arr = np.ones(npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
-			LR = self.pk2LR(peaks, npk)
+			LR = self.pk2LR(pkchoose, npk)
 
 			# leave this comment in to check values later if desired
 			# print('l', l)
@@ -1660,9 +1677,9 @@ class Pixel(object):
 			# print('LEFT = ', LR[0])
 			# print('RIGHT = ', LR[1])
 			if iter :
-				M = np.array([i.M_it for i in peaks])
+				M = np.array([i.M_it for i in pkchoose])
 			else :			
-				M = np.array([i.tau for i in peaks])
+				M = np.array([i.tau for i in pkchoose])
 			# peaks_handle prepares a Ctypes 'Structure' object to make a C Structure.
 			PEAK = peaks_handle(npk, LR[0], LR[1], l_arr, k_arr, M)
 			# self.filt = np.empty_like(self.data)
@@ -1675,10 +1692,10 @@ class Pixel(object):
 
 		self.filt = np.array(self.filt)
 
-	def pk2LR(self, peaks, npk) :
+	def pk2LR(self, pkchoose, npk) :
 	
 		''' put peak locations into arrays of left and rights for trapezoidal shaper.
-		 apply desired offset. Both arrays are the same length as input 'peaks' array.
+		 apply desired offset. Both arrays are the same length as input 'pkchoose' array.
 
 		return:
 		- LEFT and RIGHT : beginning and end points for each set of 
@@ -1689,11 +1706,11 @@ class Pixel(object):
 		RIGHT = np.zeros(npk)
 
 		for i in range(npk-1):
-			LEFT[i]  = peaks[i].index   + self.shaper_offset
-			RIGHT[i] = peaks[i+1].index + self.shaper_offset
+			LEFT[i]  = pkchoose[i].index   + self.shaper_offset
+			RIGHT[i] = pkchoose[i+1].index + self.shaper_offset
 			
 		LEFT[0] = 0
-		LEFT[npk-1] = peaks[npk-1].index + self.shaper_offset
+		LEFT[npk-1] = pkchoose[npk-1].index + self.shaper_offset
 		RIGHT[npk-1] = Pixel.daq_length
 
 		# trapezoidal filter uses size_t, or c_ulong, as its datatype
