@@ -30,7 +30,7 @@ import cv2
 # math/matrices, statistics, and fitting
 import numpy as np
 from scipy.stats import chisquare
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, leastsq
 from scipy.signal import find_peaks_cwt, convolve, savgol_filter
 
 # "harmless" warning when scipy tries to use some external library 
@@ -422,7 +422,7 @@ class Sensor(object):
 			    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
 			    guess = [0.008, 1.0/20, 0],						   				   		   # amplitude, 1/tau, offset
 			    
-			    l = 60, k = 20, M_def = float(30), shaper_offset = -20):  				   # shaper
+			    l = 60, k = 20, M_def = float(20), shaper_offset = -20):  				   # shaper
 
 		''' analysis chain: 
 		1. find peaks 
@@ -522,21 +522,28 @@ class Sensor(object):
 		Pixel.M_def = M_def # default M is no peaks are found.
 		Pixel.shaper_offset = shaper_offset # this should generally be negative
 
-		# define a peak object for a 'no peak' channel just once, so it can be reused.
-		l_arr = np.ones(1, dtype = c_ulong)*Pixel.l
-		k_arr = np.ones(1, dtype = c_ulong)*Pixel.k	
-		LEFT = np.array(0, dtype = c_ulong)
-		RIGHT = np.array(self.daq_length, dtype = c_ulong)		
-		M = np.array(M_def)
-		Pixel.zero_pk = peaks_handle(1, LEFT, RIGHT, l_arr, k_arr, M)
+		# define a peak object for a 'zero peak' channel just once, so it can be reused.
+		l_arr_0 = np.ones(1, dtype = c_ulong)*Pixel.l
+		k_arr_0 = np.ones(1, dtype = c_ulong)*Pixel.k	
+		LEFT_0 = np.array(0, dtype = c_ulong)
+		RIGHT_0 = np.array(self.daq_length, dtype = c_ulong)		
+		M_0 = np.array(M_def)
+		Pixel.zero_pk = peaks_handle(1, LEFT_0, RIGHT_0, l_arr_0, k_arr_0, M_0)
+
+
+		### if these variable names aren't unique, the pointers may not always be garbage collected between uses...
+		### we ran into issues with this after defining these two separate peak objects using variables that
+		### had been reassigned. ALWAYS use unique names, even though the reassignment should have worked.
+		### to be clear, we'd used 'l_arr' , 'LEFT', etc. etc. as names for the arrays for BOTH 'peaks_t' objects before, and we
+		### were getting segmentation faults because of it, when trying to use Pixel.filter_peaks() on the zero_peak case.
 
 		# define a peak object for 'skinny' trapezoidal filter parameters. this is used for peak detection.
-		l_arr2 = np.ones(1, dtype = c_ulong)*Pixel.l_s
-		k_arr2 = np.ones(1, dtype = c_ulong)*Pixel.k_s
-		LEFT2 = np.array(0, dtype = c_ulong)
-		RIGHT2 = np.array(self.daq_length, dtype = c_ulong)		
-		M2 = np.array(M_def)
-		Pixel.skinny_pk = peaks_handle(1, LEFT2, RIGHT2, l_arr2, k_arr2, M2)
+		l_arr_s = np.ones(1, dtype = c_ulong)*Pixel.l_s
+		k_arr_s = np.ones(1, dtype = c_ulong)*Pixel.k_s
+		LEFT_s = np.array(0, dtype = c_ulong)
+		RIGHT_s = np.array(self.daq_length, dtype = c_ulong)		
+		M_s = np.array(M_def)
+		Pixel.skinny_pk = peaks_handle(1, LEFT_s, RIGHT_s, l_arr_s, k_arr_s, M_s)
 
 		print('analysis parameters... \n')
 		print('peak detection: sign = %i, threshold = %f, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
@@ -566,14 +573,8 @@ class Sensor(object):
 				#print(self.pix[i].__dict__)
 				print('channel no. %i' % i)
 				self.pix[i].peak_det()
-				print("pd done")
-				#self.pix[i].__dict__
-
 				self.pix[i].fit_pulses()
-				print('fit done')
-				print(self.pix[i].__dict__)
 				self.pix[i].filter_peaks()
-				print('filter done')
 
 
 			# just default filter bad channels
@@ -657,6 +658,26 @@ class Sensor(object):
 		]
 		
 
+		# specify a range of frames, then generate appropriate events.
+
+		self.zero_events = [
+
+		# top left
+		Event(x=12,y=12,r=10, i= shape='c')
+
+		# top right
+		Event(x=59,y=12,r=10, i= shape='c')
+
+		# bottom left
+		Event(x=12,y=59,r=10, i= shape='c')
+
+		# bottom right
+		Event(x=59,y=59,r=10, i= shape='c')
+
+		
+
+
+		]
 
 
 
@@ -765,7 +786,7 @@ class Sensor(object):
 			fig.show()	 
 
 
-	def vsum_select(self, show = False, nfake=100, v_window = (0,0), hist_lr = [(0, 300), (-100,100)], nbins=[20,20], axis = 0):
+	def vsum_select(self, show=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
 
 		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
 		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
@@ -837,7 +858,10 @@ class Sensor(object):
 			#axis.set_ylim()
 			axis.grid(True)
 
+
 		else : 			# no axis supplied, make standalone plot.
+
+			# REAL EVENTS
 			fig, ax = plt.subplots(1,1)
 			ax.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
 			ax.set_xlabel('Volts, summed over event pixels and frames')
@@ -848,15 +872,20 @@ class Sensor(object):
 			ax.grid(True)
 			fig.show()
 
+			# FAKE EVENTS, FOR ZERO PEAK
 			fig2, ax2 = plt.subplots(1,1)
-			ax2.hist(x=self.fake_E, bins=nbins[1], range=hist_lr[1])
+			self.val, self.bins, patches = ax2.hist(x=self.fake_E, bins=nbins[1], range=hist_lr[1])
 			ax2.set_xlabel('Volts, summed over event pixels and frames')
 			ax2.set_ylabel('counts')
 			ax2.set_title('sensor noise "zero peak"')
 			#ax2.set_xlim(begin, end) # x limits, y limits
 			#ax2.set_ylim()
 			ax2.grid(True)
-			fig2.show()		 
+			fig2.show()		
+
+			figg, axg = self.fit_gaussian(np.delete(self.bins,-1), self.val)
+			figg.show() 
+			input('press enter to finish')
 
 		# show the the middle most frame of events of interest.
 		if show :
@@ -868,11 +897,48 @@ class Sensor(object):
 				input("press enter to show next event:")	
 				ax3.cla()
 				ax3.set_title('frame=%i coordinate=(%i, %i) radius=%i vsum = %fV' % p)
-				self.pixelate_single(sample = int(p[0]), arr=[], axis = ax3)
+				self.pixelate_single(sample = int(p[0]), axis = ax3)
 				# add a circle 'artist' to the event we are analyzing
 				circ = plt.Circle((p[1], p[2]), p[3], color = 'r', fill=False, linewidth = 1.5, alpha=1)
 				ax3.add_artist(circ)
 				fig3.show()
+
+
+	def fit_gaussian(self, bins, values) :
+		''' this function takes data values (maybe bins from a histogram) and fits a gaussian to them,
+		displaying the mean, sigma, height, and offset.
+		'''
+
+		fitfunc  = lambda p, x: p[0]*np.exp(-0.5*((x-p[1])/p[2])**2)+p[3]
+		errfunc  = lambda p, x, y: (y - fitfunc(p, x))
+
+		x=bins
+		y=values
+
+		# x = np.arange(len(data))
+		# y = data
+
+
+
+		init  = [1.0, 0.5, 0.5, 0.5]
+		out   = leastsq( errfunc, init, args=(x, y))
+		
+		c = out[0]
+
+		print("A exp[-0.5((x-mu)/sigma)^2] + k ")
+		print("Parent Coefficients:")
+		print("1.000, 0.200, 0.300, 0.625")
+		print("Fit Coefficients:")
+		print(c[0],c[1],abs(c[2]),c[3])
+
+		fig, ax = plt.subplots(1,1)
+		ax.step(x, fitfunc(c, x))
+		ax.step(x, y)
+
+		ax.set_title('$A = %.3f\  \mu = %.3f\  \sigma = %.3f\ k = %.3f $' % (c[0],c[1],abs(c[2]),c[3]));
+
+		return fig, ax
+
 
 	def fit_hist(self, nbins = [100,100,100,100], hlr=[], plr=[(0,120), (0,300), (0,400), (0,1)],  axis=0) :
 		
@@ -964,20 +1030,7 @@ class Sensor(object):
 
 			return (M,A,OFF,XSQ)
 
-	def reform_data(self) :
-		'''
-		after analyzing the each Pixel's data and getting 
-		filtered result, we can slam it all into one big 
-		two-dimensional array for making 2d pixellated images.
-		'''
-		# self.filt = np.array([i.filt for i in self.pix])
-
-		# always iterating over the total number of channels preserves shape of 2d array in the
-		# case that we only analyze a few channels, but still want to use functions that depend on self.row
-		self.filt = np.array([self.pix[i].filt for i in range(self.nch)])
-
-
-	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = -0.001, vmax = 0.007) :
+	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = -0.001, vmax = 0.007, circle=False) :
 
 		'''
 		input:
@@ -988,6 +1041,7 @@ class Sensor(object):
 		10th point in time is plotted. stepsize must divide into integers. 
 		-stepthru : if True, press enter to step through frame by frame. if False,
 		the images stream through on their own.
+		-circle : list of tuples containing (x,y,r) to impose circles onto the plot if desired.
 		'''
 
 		frames = np.arange(start, stop, stepsize)
@@ -1045,13 +1099,18 @@ class Sensor(object):
 
 		'''
 
+		# get the data from the pixels into an array.
+		d = [p.filt[sample] for p in self.pix] # 5184 linear array
+		d = np.reshape(d, (self.row, self.row)) # 72 x 72 2-D array
+
+
 		if isinstance(axis, ax_obj) :
 
 			# default case, plot data by specifying sample in dataset.
 			if not len(values) :
-				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
+				#data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
-				im = axis.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
+				im = axis.imshow(d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			
 			# if 'values' is input, display these pixels
 			else :
@@ -1066,9 +1125,9 @@ class Sensor(object):
 
 			# default case, plot data by specifying sample in dataset.
 			if not len(values) :
-				data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
+				#data_2d = np.reshape(self.filt[:,sample], (self.row, -1)) # convert to square matrix
 				# make value bounds for the plot and specify the color map.
-				im = ax.imshow(data_2d, cmap=cm.jet, vmin=vmin, vmax=vmax)
+				im = ax.imshow(d, cmap=cm.jet, vmin=vmin, vmax=vmax)
 			
 			# if array is input, plot this image instead.
 			else :
@@ -1639,19 +1698,15 @@ class Pixel(object):
 		-iter : filter the data using the the newly iterated value of M
 		 '''
 
-		# only filter peaks if they have tau values in the range we're interested in.
-		# print(peaks)
-		# print(npk)
+
 		pkchoose = [i for i in self.peaks if i.id == 'single']
 		npk = len(pkchoose)
-		for i in pkchoose :
-			print(i.index)
-		print('pkchoose = ', pkchoose, 'npk = ', npk)
-		print(Pixel.zero_pk)
+
 		# no peaks found or if skipping peak detection and fitting ('simple' option), use default M. 
+		
 		if (npk == 0 or simple == True) : # no peaks found, use default M.
 			Pixel.shp_lib.shaper_multi(self.data, self.filt, c_ulong(len(self.data)), byref(Pixel.zero_pk), c_double(self.avg))
-			print('reached this point for zero peak channel.')
+
 		elif (npk == 1) : # one peak found.
 			l_arr = np.ones(npk, dtype = c_ulong)*Pixel.l
 			k_arr = np.ones(npk, dtype = c_ulong)*Pixel.k
