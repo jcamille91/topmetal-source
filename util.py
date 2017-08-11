@@ -592,162 +592,7 @@ class Sensor(object):
 		print('finished analyzing', len(self.pix), 'pixels.') 
 
 
-	def label_events(self):
-
-		# just a quick and dirty function to manually input events of
-		# interest for future reference 
-		# all taken from out22.h5
-
-		# Event methods need row to retrieve pixel selections.
-		Event.row = self.row
-
-		# the length of an event should be ~ l+k, determined by the trapezoidal
-		# filter parameters.
-
-		# circle shaped events; use select_circle(x, y, radius, index)
-		self.alpha_events = [
-
-		# events defined by circles
-
-		Event(x=10, y=29, r=10, i=3520, shape='c'), #
-		# 4800, next 320, 470, 500, 900
-		Event(x=15, y=9, r=9, i=6510, shape='c'), #
-		Event(x=45, y=31, r=10, i=6580, shape='c'), #
-		Event(x=11, y=30, r=10, i=6845, shape='c'), #
-		Event(x=18, y=45, r=15, i=7020, shape='c'), #
-		Event(x=25, y=46, r=13, i=7505, shape='c'), #
-		Event(x=18, y=45, r=15, i=7020, shape='c'), #
-		Event(x=23, y=10, r=10, i=7865, shape='c'), #
-		Event(x=19, y=10, r=10, i=8510, shape='c'), #
-		Event(x=43, y=29, r=12, i=8910, shape='c'), #
-		Event(x=28, y=16, r=11, i=9095, shape='c'), #
-		# CHECKME Event(x=18, y=28, r=13, i=9545, shape='c'), # this one moves a little bit but is focused well
-		Event(x=36, y=29, r=12, i=10610, shape='c'), #
-		Event(x=32, y=10, r=10, i=10910, shape='c'), #
-		Event(x=39, y=14, r=12, i=11030, shape='c'), # lopsided but focused, rectangle is better here
-		Event(x=42, y=17, r=12, i=12460, shape='c'), #
-		Event(x=22, y=48, r=12, i=12850, shape='c'), #
-		Event(x=9, y=28, r=9, i=13060, shape='c'), #
-		Event(x=42, y=17, r=12, i=12460, shape='c'), #
-		Event(x=18, y=28, r=10, i=13700, shape='c'), #
-		Event(x=20, y=9, r=9, i=14425, shape='c'), # elliptical and focused
-		Event(x=28, y=9, r=9, i=15140, shape='c'), #
-		Event(x=18, y=23, r=9, i=15475, shape='c'), #
-		Event(x=40, y=42, r=14, i=16825, shape='c'), # lots of dark pixels here
-		# CHECKME Event(x=12, y=7, r=7, i=17600, shape='c'), # elliptical and a little broken up
-		Event(x=40, y=14, r=10, i=18345, shape='c'), # nice circle
-		Event(x=42, y=30, r=10, i=18755, shape='c'), # nice circle but not isolated
-		Event(x=41, y=32, r=9, i=20370, shape='c'), # moves a bit and is a little bit separated
-		Event(x=40, y=30, r=11, i=20550, shape='c'), # fat elliptical circle
-		# CHECK ME Event(x=24, y=42, r=11, 21140, shape='c'), # circle, lots of darker pixels
-		# CHECK ME Event(x=24, y=42, r=11, 21375, shape='c'), # pretty similar in location/consistency to previous event
-		Event(x=40, y=52, r=10, i=21830, shape='c'), # small ellipse
-		Event(x=20, y=11, r=10, i=22270, shape='c'), # starts circular becomes elliptical
-		Event(x=40, y=35, r=10, i=22675, shape='c'), # big messy circle
-		Event(x=12, y=8, r=8, i=23060, shape='c'), # elliptical blip
-		Event(x=7, y=25, r=7, i=23220, shape='c'), # two disjointed blobs, probably can't capture both with a circle
-		Event(x=16, y=7, r=7, i=23400, shape='c'), #
-		Event(x=40, y=12, r=10, i=23545, shape='c'), # circle, but not totally isolated from other signal
-		Event(x=31, y=13, r=12, i=23705, shape='c'), #
-		#CHECK ME Event(x=26, y=6, r=6, i=23775, shape='c'), # very small circle, not isolated
-		Event(x=25, y=54, r=13, i=23890, shape='c'), # kind of scattered, not a closed circle
-		Event(x=12, y=30, r=12, i=24175, shape='c'), # scattered circle, in happens very close in time to two other events
-		Event(x=13, y=29, r=12, i=24940, shape='c'), # big elliptical blob, focused
-
-
-		]
-		
-
-		# specify a range of frames, then generate appropriate events.
-
-		self.zero_events = [
-
-		# top left
-		Event(x=12,y=12,r=10, i=0, shape='c'),
-		(20,150),
-		(260,400),
-		(540,700),
-		(860,1300),
-		(2100,2300),
-		(2500,2800),
-		(7300,7500),
-		(860,960),
-		(1090,1350),
-		(1470,2000),
-		(2200,2850),
-		(3450,3600),
-		# top right
-		Event(x=59,y=12,r=10, i=0, shape='c'),
-		(80,450),
-		(1700,1850),
-		(2000,2100),
-		(2700,28;00),
-		(2100,2300),
-		(2500,2800),
-		(2900,3000),
-		(3300,3700),
-		(3800,4200),
-		(4400,4560),
-		(4900,5400),
-		(5500,5700),
-		(5840,6100),
-		(6300,6600),
-		(6740,6900),
-		(7140,7300),
-		(8620,8960),
-		(10300,11400),
-		(11600,11700),
-		(15000,15600),
-		(5500,5700),
-		(5500,5700),
-		# bottom left
-		Event(x=12,y=59,r=10, i=0, shape='c'),
-		(0,300),
-		(860,960),
-		(1090,1350),
-		(1470,2000),
-		(2200,2850),
-		(3450,3600),
-		# bottom right
-		Event(x=59,y=59,r=10, i=0, shape='c')
-
-		(80,800),
-		(900,1400),
-		(1600,1850),
-		(2000,2600),
-		]
-
-
-		pt = [
-		(0,300),
-		(860,960),
-		(1090,1350),
-		(1470,2000),
-		(2200,2850),
-		(3450,3600),
-		(80,800),
-		(900,1400),
-		(1600,1850),
-		(2000,2600),
-		(80,800),
-
-		]
-
-
-
-
-		# # 'blobs' some  
-		# ev = Event(45, 15, 15, 2135) #
-		# ev = Event(38, 46, 16, 3020) #
-		# self.select_rectangle([17,37] , [19,60]) #
-		# ev = Event(50, 31, 14, 16440) # this one definitely moves...
-		# ev = Event(24, 43, 14, 16590) # big elliptical, focused
-		# ev = Event(22, 38, 9, 19180) # big elliptical
-		# ev = Event(1,1,1, 21520) # pretty messy, hard to discren a shape, but definitely an event
-		# # moving
-
-		# ev = Event(27, 36, 8, 1800) #
-		# self.alpha_events = [ev1, ev2, ev3, ev4]
+	
 
 	def save_peaks(self, outfile) :
 
@@ -836,6 +681,278 @@ class Sensor(object):
 			axis.grid(True)
 			fig.show()	 
 
+	def ptest(self, nbins, lr):
+
+		string = 'l=%i\nk=%i\n#events=%i' % (11, 5, 1000)		
+		zstring = 'l=%i\nk=%i\n#events=%i' % (70, 20, 40)		
+		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
+
+
+		data = np.random.normal(loc=2,scale=1,size=1000)
+		data2 = np.random.normal(loc=0,scale=1,size=1000)
+		# REAL EVENTS
+		fig, ax = plt.subplots(1,1)
+		ax.hist(x=data, bins=nbins, range=lr)
+		ax.set_xlabel('Volts, summed over event pixels and frames')
+		ax.set_ylabel('counts')
+		ax.set_title('alpha energy peak')
+		#ax.set_xlim(begin, end) # x limits, y limits
+		#ax.set_ylim()
+		ax.text(0.05, 0.95, string, transform=ax.transAxes, fontsize=12,
+			verticalalignment='top', bbox=props)
+		ax.grid(True)
+		fig.show()
+
+		fig2, ax2 = plt.subplots(1,1)
+		ax2.hist(x=data2, bins=nbins, range=lr)
+		ax2.set_xlabel('Volts, summed over event pixels and frames')
+		ax2.set_ylabel('counts')
+		ax2.set_title('alpha energy peak')
+		#ax.set_xlim(begin, end) # x limits, y limits
+		#ax.set_ylim()
+		ax2.text(0.70, 0.95, zstring, transform=ax.transAxes, fontsize=12,
+			verticalalignment='top', bbox=props)
+		ax2.grid(True)
+		fig2.show()
+
+	def label_events(self, rms_npt):
+
+		'''just a quick and dirty function to manually input events of
+		interest for future reference 
+		all taken from out22.h5
+
+		the first section lists possible alpha-events: clustered areas of signal.
+		each possible event is stored in an 'Event' class instance.
+		each object specifies the location, geometric shape, and 
+		start time of the event. From this information, we can retrieve
+		the list of relevant pixels for this event to analyze, with
+		Event.retrieve_selection().
+
+		the second section has lists of longer periods of time where the sensor is quiet
+		in several regions (zero_ev, rms_ev). From these lists of quiet time periods, we generate a bunch of 
+		Event objects to use for analysis of the sensor's noise. 
+		'''
+
+
+		# Event methods need row to retrieve pixel selections.
+		Event.row = self.row
+		self.rms_npt = rms_npt
+
+		# the length of an event should be ~ l+k, determined by the trapezoidal
+		# filter parameters.
+
+		# circle shaped events; use select_circle(x, y, radius, index)
+		self.alpha_events = [
+
+		# events defined by circles
+
+		Event(x=10, y=29, r=10, i=3520, shape='c'), #
+		# 4800, next 320, 470, 500, 900
+		Event(x=15, y=9, r=9, i=6510, shape='c'), #
+		Event(x=45, y=31, r=10, i=6580, shape='c'), #
+		Event(x=11, y=30, r=10, i=6845, shape='c'), #
+		Event(x=18, y=45, r=15, i=7020, shape='c'), #
+		Event(x=25, y=46, r=13, i=7505, shape='c'), #
+		Event(x=18, y=45, r=15, i=7020, shape='c'), #
+		Event(x=23, y=10, r=10, i=7865, shape='c'), #
+		Event(x=19, y=10, r=10, i=8510, shape='c'), #
+		Event(x=43, y=29, r=12, i=8910, shape='c'), #
+		Event(x=28, y=16, r=11, i=9095, shape='c'), #
+		# CHECKME Event(x=18, y=28, r=13, i=9545, shape='c'), # this one moves a little bit but is focused well
+		Event(x=36, y=29, r=12, i=10610, shape='c'), #
+		Event(x=32, y=10, r=10, i=10910, shape='c'), #
+		Event(x=39, y=14, r=12, i=11030, shape='c'), # lopsided but focused, rectangle is better here
+		Event(x=42, y=17, r=12, i=12460, shape='c'), #
+		Event(x=22, y=48, r=12, i=12850, shape='c'), #
+		Event(x=9, y=28, r=9, i=13060, shape='c'), #
+		Event(x=42, y=17, r=12, i=12460, shape='c'), #
+		Event(x=18, y=28, r=10, i=13700, shape='c'), #
+		Event(x=20, y=9, r=9, i=14425, shape='c'), # elliptical and focused
+		Event(x=28, y=9, r=9, i=15140, shape='c'), #
+		Event(x=18, y=23, r=9, i=15475, shape='c'), #
+		Event(x=40, y=42, r=14, i=16825, shape='c'), # lots of dark pixels here
+		# CHECKME Event(x=12, y=7, r=7, i=17600, shape='c'), # elliptical and a little broken up
+		Event(x=40, y=14, r=10, i=18345, shape='c'), # nice circle
+		Event(x=42, y=30, r=10, i=18755, shape='c'), # nice circle but not isolated
+		Event(x=41, y=32, r=9, i=20370, shape='c'), # moves a bit and is a little bit separated
+		Event(x=40, y=30, r=11, i=20550, shape='c'), # fat elliptical circle
+		# CHECK ME Event(x=24, y=42, r=11, 21140, shape='c'), # circle, lots of darker pixels
+		# CHECK ME Event(x=24, y=42, r=11, 21375, shape='c'), # pretty similar in location/consistency to previous event
+		Event(x=40, y=52, r=10, i=21830, shape='c'), # small ellipse
+		Event(x=20, y=11, r=10, i=22270, shape='c'), # starts circular becomes elliptical
+		Event(x=40, y=35, r=10, i=22675, shape='c'), # big messy circle
+		Event(x=12, y=8, r=8, i=23060, shape='c'), # elliptical blip
+		Event(x=7, y=25, r=7, i=23220, shape='c'), # two disjointed blobs, probably can't capture both with a circle
+		Event(x=16, y=7, r=7, i=23400, shape='c'), #
+		Event(x=40, y=12, r=10, i=23545, shape='c'), # circle, but not totally isolated from other signal
+		Event(x=31, y=13, r=12, i=23705, shape='c'), #
+		#CHECK ME Event(x=26, y=6, r=6, i=23775, shape='c'), # very small circle, not isolated
+		Event(x=25, y=54, r=13, i=23890, shape='c'), # kind of scattered, not a closed circle
+		Event(x=12, y=30, r=12, i=24175, shape='c'), # scattered circle, in happens very close in time to two other events
+		Event(x=13, y=29, r=12, i=24940, shape='c'), # big elliptical blob, focused
+
+
+		]
+		
+
+		# specify a range of quiet frames, then generate appropriate events.
+
+		#top left
+		tl = [
+		(20,150),
+		(260,400),
+		(540,700),
+		(860,1300),
+		(2100,2300),
+		(2500,2800),
+		(7300,7500),
+		(860,960),
+		(1090,1350),
+		(1470,2000),
+		(2200,2850),
+		(3450,3600)
+		]
+
+		#top right
+		tr = [
+		(80,450),
+		(1700,1850),
+		(2000,2100),
+		(2700,2800),
+		(2100,2300),
+		(2500,2800),
+		(2900,3000),
+		(3300,3700),
+		(3800,4200),
+		(4400,4560),
+		(4900,5400),
+		(5500,5700),
+		(5840,6100),
+		(6300,6600),
+		(6740,6900),
+		(7140,7300),
+		(8620,8960),
+		(10300,11400),
+		(11600,11700),
+		(15000,15600),
+		(15700,15880),
+		(16000,16200),
+		(16620, 17500),
+		(17820,18000),
+		(18560,18700),
+		(18800, 19000),
+		(21100,21300),
+		(16000,16200),
+		(16620, 17500),
+		(17820,18000),
+		(18560,18700),
+		(16620, 17500),
+		]
+
+		#bottom left
+		bl = [
+		(0,300),
+		(860,960),
+		(1090,1350),
+		(1470,2000),
+		(2200,2850),
+		(3450,3600)
+		]
+
+		#bottom right
+		br = [
+		(80,800),
+		(960,1400),
+		(1600,1850),
+		(2240,2600),
+		(4860,5100),
+		(5540,5720),
+		(6600,6800),
+		(7160,7760),
+		(8100,8240),
+		(8620,8740),
+		(8940,9900),
+		(10500,10700),
+		(11640,11980), 
+		(12120,12400),
+		(12540,13260),
+		(14840,15000),
+		(15220,15300),
+		(15440,15540),
+		(15660,15820),
+		(16600,16900),
+		(17220,17400),
+		(17600,18040),
+		(18160,18260),
+		(18400,18580),
+		(21500,21800),
+		(23780,24000)
+
+		]
+
+		# we look at some circular regions. then we generate event objects for them.
+
+
+		# setup calculation for voltage summation of filtered data.
+		self.zero_ev = []
+
+		for t in tl:
+			n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
+			for j in range(n):
+				self.zero_ev.append(Event(x=12,y=12,r=10, i = t[0]+j*(Pixel.l+Pixel.k), shape='c'))
+
+		for t in tr:
+			n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
+			for j in range(n):
+				self.zero_ev.append(Event(x=59,y=12,r=10, i = t[0]+j*(Pixel.l+Pixel.k), shape='c'))
+
+		for t in bl:
+			n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
+			for j in range(n):
+				self.zero_ev.append(Event(x=12,y=59,r=10, i = t[0]+j*(Pixel.l+Pixel.k), shape='c'))
+
+		for t in br:
+			n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
+			for j in range(n):
+				self.zero_ev.append(Event(x=59,y=59,r=10, i = t[0]+j*(Pixel.l+Pixel.k), shape='c'))
+
+		# setup calculation for aggregate RMS calculation for raw, unfiltered data
+		self.rms_ev =[]
+
+		for t in tl:
+			n = int((t[1]-t[0]) / (rms_npt))
+			for j in range(n):
+				self.rms_ev.append(Event(x=12,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		for t in tr:
+			n = int((t[1]-t[0]) / (rms_npt))
+			for j in range(n):
+				self.rms_ev.append(Event(x=59,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		for t in bl:
+			n = int((t[1]-t[0]) / (rms_npt))
+			for j in range(n):
+				self.rms_ev.append(Event(x=12,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		for t in br:
+			n = int((t[1]-t[0]) / (rms_npt))
+			for j in range(n):
+				self.rms_ev.append(Event(x=59,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		
+
+		# # 'blobs' some  
+		# ev = Event[45, 15, 15, 2135) #
+		# ev = Event(38, 46, 16, 3020) #
+		# self.select_rectangle([17,37] , [19,60]) #
+		# ev = Event(50, 31, 14, 16440) # this one definitely moves...
+		# ev = Event(24, 43, 14, 16590) # big elliptical, focused
+		# ev = Event(22, 38, 9, 19180) # big elliptical
+		# ev = Event(1,1,1, 21520) # pretty messy, hard to discern a shape, but definitely an event
+		# # moving
+
+		# ev = Event(27, 36, 8, 1800) #
+		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
 	def vsum_select(self, show=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
 
@@ -849,6 +966,7 @@ class Sensor(object):
 		
 		input:
 		-show : if True, step through a pixel image of each event with a circle enclosing the region of interest.
+		-rms_npt : number of points to calculate rms values. for observing zero-peak from raw data.
 		-v_window : defaults to calculating voltage sum with l+k samples, starting at the event index. 
 		+/- values move the (left,right) fwd/bkwd
 		-hist_lr : sets the (left,right) bounds for the histogram
@@ -878,27 +996,56 @@ class Sensor(object):
 			ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
 
 
-		# create some fake/random selections to observe the zero 'noise' peak in the energy spectrum.
-		fake_ring  = []
-		self.fake_ev=[]
-		self.fake_E =[]
-		for k in range(nfake) :
-			x,y = np.random.randint(10,61,size=2)
-			i = np.random.randint(0,self.daq_length-(Pixel.l+Pixel.l))
-			self.fake_ev.append(Event(x=x, y=y, r=10, i=i, shape='c'))
+		self.zero_E =[]
 
-					
+		# this code would do a bunch of random selections inside of the pixel array.
+		# self.zero_ev=[]
+		# for k in range(nfake) :
+		# 	x,y = np.random.randint(10,61,size=2)
+		# 	i = np.random.randint(0,self.daq_length-(Pixel.l+Pixel.l))
+		# 	self.zero_ev.append(Event(x=x, y=y, r=10, i=i, shape='c'))
 
-		for f in self.fake_ev :
-			
-			f.retrieve_selection()
-			vsum = sum(self.pix[i].filt[j] for i in f.sel for j in range(f.i + v_window[0], f.i+Pixel.l+Pixel.k+v_window[1]))			
-			self.fake_E.append(vsum)
-			fake_ring.append((f.i+(Pixel.l+Pixel.k)/2, f.x, f.y, f.r, vsum))
 
+		# do summations for zero events - places where there isn't signal.
+		for z in self.zero_ev :
+			# get the list of relevant pixels
+			z.retrieve_selection()
+			# calculate summation over all pixels over all frames defined by the response length (l+k)
+			zsum = sum(self.pix[i].filt[j] for i in z.sel for j in range(z.i + v_window[0], z.i+Pixel.l+Pixel.k+v_window[1]))			
+			self.zero_E.append(zvsum)
+
+		# do RMS calculations of slices of raw data. 
+		self.rms_agg = []
+
+		# every event has a bunch of pixels for which we want to calculate the total RMS
+		for r in self.rms_ev :
+
+			# reset aggregate variance from Event.npix many channels.
+			var = 0
+
+			# get the list of relevant pixels 
+			r.retrieve_selection()
+
+			### maybe a generator expression version can work, would have to compare speeds versus using 
+			### explicit loop.
+
+			# var = sum(np.var(self.pix[i].data[r.i:r.i+self.rms_npt]) for i in r.sel)
+
+			# for each pixel, calculate the variance over specified number of frames.
+			for i in r.sel :	
+				# calculate the variance of the relevant slice (quiet point in the dataset)
+				var += np.var(self.pix[i].data[r.i:r.i+self.rms_npt])
+			# this is the aggregate RMS of 'Event.npix' many channels. they'll be placed in a list
+			rms = np.sqrt(var)
+			self.rms_agg.append(rms) # a list of all aggregate RMS values to fill histogram
 
 
 		# plot histograms for energy spectrum
+
+		# set up strings/dict for textboxes to be used in plots.
+		string = 'l=%i \n k=%i\n # events=%i' % (Pixel.l, Pixel.k, len(self.alpha_events))		
+		zstring = 'l=%i\n k=%i\n# events=%i' % (Pixel.l, Pixel.k, len(self.zero_ev))		
+		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
 
 		if isinstance(axis, ax_obj) : # axis supplied
 			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr[0])
@@ -920,17 +1067,21 @@ class Sensor(object):
 			ax.set_title('alpha energy peak')
 			#ax.set_xlim(begin, end) # x limits, y limits
 			#ax.set_ylim()
+			ax.text(0.70, 0.95, string, transform=ax.transAxes, fontsize=12,
+				verticalalignment='top', bbox=props)
 			ax.grid(True)
 			fig.show()
 
 			# FAKE EVENTS, FOR ZERO PEAK
 			fig2, ax2 = plt.subplots(1,1)
-			self.val, self.bins, patches = ax2.hist(x=self.fake_E, bins=nbins[1], range=hist_lr[1])
+			self.val, self.bins, patches = ax2.hist(x=self.zero_E, bins=nbins[1], range=hist_lr[1])
 			ax2.set_xlabel('Volts, summed over event pixels and frames')
 			ax2.set_ylabel('counts')
 			ax2.set_title('sensor noise "zero peak"')
 			#ax2.set_xlim(begin, end) # x limits, y limits
 			#ax2.set_ylim()
+			# ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
+			# 	verticalalignment='top', bbox=props)
 			ax2.grid(True)
 			fig2.show()		
 
@@ -1093,6 +1244,7 @@ class Sensor(object):
 		-stepthru : if True, press enter to step through frame by frame. if False,
 		the images stream through on their own.
 		-circle : list of tuples containing (x,y,r) to impose circles onto the plot if desired.
+		example - [(40,40,10), (50,20,5)] imposes two circles at x,y =(40,40), (50,20) with radii 10,5 respectively
 		'''
 
 		frames = np.arange(start, stop, stepsize)
@@ -2341,7 +2493,7 @@ class Event(object):
 		self.shape = shape
 
 
-	def retrieve_selection(self) :
+	def rretrieve_selection(self) :
 
 		if self.shape == 'c' :
 			self.circle()
