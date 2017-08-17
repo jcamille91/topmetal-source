@@ -234,7 +234,7 @@ class Sensor(object):
 		lib.demux(c_char_p(self.infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 
-	def load_pixels(self, npt = 25890, cut=[]):
+	def load_pixels(self, npt = 25890, cut=[], gauss_test=False, sigma=0, mean=0):
 		
 		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
 		and calculate each pixel's average and root mean square voltage. 
@@ -248,6 +248,9 @@ class Sensor(object):
 		*** nothing has been done to make 'cut' work with the analysis chain yet.
 		it may not be useful anyways because the savitsky-golay filter and trapezoidal filter will
 		give different results if used on the whole dataset versus only a chunk of it.
+
+		-gauss_test : set True to load all channels with gaussian distribution.
+		-sigma, mean : set the sigma and mean for gaussian distributions to insert into pixels.
 		'''
 
 		with h5py.File(self.infile,'r') as hf: # open file for read, then close
@@ -261,7 +264,13 @@ class Sensor(object):
 			Sensor.daq_length = len(data[0])
 
 			# iterate over a list of 'Pixel' objects, supply data, avg, and rms.
-			if ((npt == False) or (npt >= self.daq_length)) :
+
+			# make a bunch of gaussian noise
+			if gauss_test :
+				print('setting all channels to gaussian noise with sigma=%f and mean=%f' % (sigma, mean))
+				self.pix = [Pixel(i, np.random.normal(loc=mean,scale=sigma,size=self.daq_length), mean, sigma) for i in range(self.nch)]
+			# input raw data from hdf5 file we just opened.
+			elif ((npt == False) or (npt >= self.daq_length)) :
 				print('set avg/rms calculation length to raw data array length =', self.daq_length)
 				self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
 			
@@ -294,6 +303,7 @@ class Sensor(object):
 		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
 		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
 
+	def make_gaussian_ch(self, sigma, mu):
 
 	def make_pixel(self, choose, mV_noise = 1):
 		'''
@@ -954,16 +964,42 @@ class Sensor(object):
 		# ev = Event(27, 36, 8, 1800) #
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
+	def rms_agg(self, ok):
+
+		# do RMS calculations of slices of raw data. 
+		self.rms_agg = []
+
+		# every event has a bunch of pixels for which we want to calculate the total RMS
+		for r in self.rms_ev :
+
+			# reset aggregate variance from Event.npix many channels.
+			var = 0
+
+			# get the list of relevant pixels 
+			r.retrieve_selection()
+
+			### maybe a generator expression version can work, would have to compare speeds versus using 
+			### explicit loop.
+
+			# var = sum(np.var(self.pix[i].data[r.i:r.i+self.rms_npt]) for i in r.sel)
+
+			# for each pixel, calculate the variance over specified number of frames.
+			for i in r.sel :	
+				# calculate the variance of the relevant slice (quiet point in the dataset)
+				var += np.var(self.pix[i].data[r.i:r.i+self.rms_npt])
+			# this is the aggregate RMS of 'Event.npix' many channels. they'll be placed in a list
+			rms = np.sqrt(var)
+			self.rms_agg.append(rms) # a list of all aggregate RMS values to fill histogram
+
+		rstring = 'l=%i\n k=%i\n# events=%i' % (Pixel.l, Pixel.k, len(self.zero_ev))
+		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
+
 	def vsum_select(self, show=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
 
-		'''a word on this measurement: for the experimental setup, each alpha event should deposit all of its
-		energy into ionizing air. nearly all charge due to this event should be picked up by the sensor. Therefore,
-		if we add all the consituent voltages of an event, we should get a measure of the alpha particle's energy
-		spectrum (a "sharp" peak).
+		'''
+		This function makes takes selections of pixels within circles, or other shapes,
+		to define events. then, over all frames constituting an event, voltage of filtered data is summed.
 
-		This function makes takes selections of pixels within circles
-		to define events. then, over all frames constituting an event, voltage is summed.
-		
 		input:
 		-show : if True, step through a pixel image of each event with a circle enclosing the region of interest.
 		-rms_npt : number of points to calculate rms values. for observing zero-peak from raw data.
@@ -972,6 +1008,14 @@ class Sensor(object):
 		-hist_lr : sets the (left,right) bounds for the histogram
 		-nbins : number of bins for histogram
 		-axis : supply axis to plot to, or don't supply an axis and generate standalone plot.
+
+		a word on this measurement: for the experimental setup, each alpha event should deposit all of its
+		energy to ionize air. nearly all charge due to this event should be picked up by the sensor. Therefore,
+		if we add all the consituent voltages of an event, we should get a measure of the alpha particle's energy
+		spectrum (a "sharp" peak). Deposited charge is proportional to the height of a pulse, which is proportional
+		to the voltage summation of the trapezoidal response if M is chosen correctly. (error on summation gets bad when
+		M is off by more than 1 or 2)
+
 		'''
 
 		ring = [] # contains info for each as a tuple so we can easily print later.
@@ -1044,7 +1088,7 @@ class Sensor(object):
 
 		# set up strings/dict for textboxes to be used in plots.
 		string = 'l=%i \n k=%i\n # events=%i' % (Pixel.l, Pixel.k, len(self.alpha_events))		
-		zstring = 'l=%i\n k=%i\n# events=%i' % (Pixel.l, Pixel.k, len(self.zero_ev))		
+		zstring = 'l=%i\n k=%i\n# events=%i' % (Pixel.l, Pixel.k, len(self.zero_ev))
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
 
 		if isinstance(axis, ax_obj) : # axis supplied
@@ -1060,17 +1104,17 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 
 			# REAL EVENTS
-			fig, ax = plt.subplots(1,1)
-			ax.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
-			ax.set_xlabel('Volts, summed over event pixels and frames')
-			ax.set_ylabel('counts')
-			ax.set_title('alpha energy peak')
-			#ax.set_xlim(begin, end) # x limits, y limits
-			#ax.set_ylim()
-			ax.text(0.70, 0.95, string, transform=ax.transAxes, fontsize=12,
+			fig1, ax1 = plt.subplots(1,1)
+			ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
+			ax1.set_xlabel('Volts, summed over event pixels and frames')
+			ax1.set_ylabel('counts')
+			ax1.set_title('alpha energy peak')
+			#ax1.set_xlim(begin, end) # x limits, y limits
+			#ax1.set_ylim()
+			ax1.text(0.70, 0.95, string, transform=ax1.transAxes, fontsize=12,
 				verticalalignment='top', bbox=props)
-			ax.grid(True)
-			fig.show()
+			ax1.grid(True)
+			fig1.show()
 
 			# FAKE EVENTS, FOR ZERO PEAK
 			fig2, ax2 = plt.subplots(1,1)
@@ -1085,6 +1129,19 @@ class Sensor(object):
 			ax2.grid(True)
 			fig2.show()		
 
+			# 'quiet events', for measurement of RMS values
+			fig3, ax3 = plt.subplots(1,1)
+			self.val, self.bins, patches = ax2.hist(x=self.zero_E, bins=nbins[1], range=hist_lr[1])
+			ax3.set_xlabel('Volts, summed over event pixels and frames')
+			ax3.set_ylabel('counts')
+			ax3.set_title('sensor noise "zero peak"')
+			#ax2.set_xlim(begin, end) # x limits, y limits
+			#ax2.set_ylim()
+			# ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
+			# 	verticalalignment='top', bbox=props)
+			ax3.grid(True)
+			fig3.show()	
+
 			figg, axg = self.fit_gaussian(np.delete(self.bins,-1), self.val)
 			figg.show() 
 			input('press enter to finish')
@@ -1092,22 +1149,22 @@ class Sensor(object):
 		# show the the middle most frame of events of interest.
 		if show :
 
-			fig3, ax3 = plt.subplots(1,1)
+			fig4, ax4 = plt.subplots(1,1)
 
 			# p is a tuple (midpoint, x, y, r)
 			for p in ring:
 				input("press enter to show next event:")	
-				ax3.cla()
-				ax3.set_title('frame=%i coordinate=(%i, %i) radius=%i vsum = %fV' % p)
-				self.pixelate_single(sample = int(p[0]), axis = ax3)
+				ax4.cla()
+				ax4.set_title('frame=%i coordinate=(%i, %i) radius=%i vsum = %fV' % p)
+				self.pixelate_single(sample = int(p[0]), axis = ax4)
 				# add a circle 'artist' to the event we are analyzing
 				circ = plt.Circle((p[1], p[2]), p[3], color = 'r', fill=False, linewidth = 1.5, alpha=1)
-				ax3.add_artist(circ)
-				fig3.show()
+				ax4.add_artist(circ)
+				fig4.show()
 
 
 	def fit_gaussian(self, bins, values) :
-		''' this function takes data values (maybe bins from a histogram) and fits a gaussian to them,
+		''' this function takes data values and bins from a histogram then fits a gaussian to them,
 		displaying the mean, sigma, height, and offset.
 		'''
 
@@ -1306,7 +1363,7 @@ class Sensor(object):
 
 		'''
 
-		# get the data from the pixels into an array.
+		# get the data from each individual pixel into an array.
 		d = [p.filt[sample] for p in self.pix] # 5184 linear array
 		d = np.reshape(d, (self.row, self.row)) # 72 x 72 2-D array
 
