@@ -183,7 +183,7 @@ class Sensor(object):
 
 		# demux DAQ parameters
 		self.demuxoutfile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble2.h5'
-		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels")
+		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels\n")
 
 	def demux(rawinfile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
 		''' 
@@ -234,7 +234,7 @@ class Sensor(object):
 		lib.demux(c_char_p(self.infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 
-	def load_pixels(self, npt = 25890, cut=[], gauss_test=False, sigma=0, mean=0):
+	def load_pixels(self, npt=25890, cut=[], gauss_test=False, sigma=0, mean=0):
 		
 		'''retrieve the waveform data from .hdf5/.h5 file for each pixel 
 		and calculate each pixel's average and root mean square voltage. 
@@ -268,9 +268,10 @@ class Sensor(object):
 			# make a bunch of gaussian noise
 			if gauss_test :
 				print('setting all channels to gaussian noise with sigma=%f and mean=%f' % (sigma, mean))
-				self.pix = [Pixel(i, np.random.normal(loc=mean,scale=sigma,size=self.daq_length), mean, sigma) for i in range(self.nch)]
+				self.rms_pix = [Pixel(i, np.random.normal(loc=mean,scale=sigma,size=self.daq_length), mean, sigma) for i in range(self.nch)]
+
 			# input raw data from hdf5 file we just opened.
-			elif ((npt == False) or (npt >= self.daq_length)) :
+			if ((npt == False) or (npt >= self.daq_length)) :
 				print('set avg/rms calculation length to raw data array length =', self.daq_length)
 				self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
 			
@@ -304,6 +305,7 @@ class Sensor(object):
 		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
 
 	def make_gaussian_ch(self, sigma, mu):
+		pass
 
 	def make_pixel(self, choose, mV_noise = 1):
 		'''
@@ -720,14 +722,14 @@ class Sensor(object):
 		ax2.set_title('alpha energy peak')
 		#ax.set_xlim(begin, end) # x limits, y limits
 		#ax.set_ylim()
-		ax2.text(0.70, 0.95, zstring, transform=ax.transAxes, fontsize=12,
+		ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
 			verticalalignment='top', bbox=props)
 		ax2.grid(True)
 		fig2.show()
 
 	def label_events(self, rms_npt):
 
-		'''just a quick and dirty function to manually input events of
+		'''a quick and dirty function to manually input events of
 		interest for future reference 
 		all taken from out22.h5
 
@@ -949,7 +951,27 @@ class Sensor(object):
 			for j in range(n):
 				self.rms_ev.append(Event(x=59,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
 
-		
+		# self.rms_ev2 = []
+
+		# for t in tl:
+		# 	n = int((t[1]-t[0]) / (rms_npt))
+		# 	for j in range(n):
+		# 		self.rms_ev2.append(Event(x=12,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		# for t in tr:
+		# 	n = int((t[1]-t[0]) / (rms_npt))
+		# 	for j in range(n):
+		# 		self.rms_ev2.append(Event(x=59,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		# for t in bl:
+		# 	n = int((t[1]-t[0]) / (rms_npt))
+		# 	for j in range(n):
+		# 		self.rms_ev2.append(Event(x=12,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
+
+		# for t in br:
+		# 	n = int((t[1]-t[0]) / (rms_npt))
+		# 	for j in range(n):
+		# 		self.rms_ev2.append(Event(x=59,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
 
 		# # 'blobs' some  
 		# ev = Event[45, 15, 15, 2135) #
@@ -964,7 +986,7 @@ class Sensor(object):
 		# ev = Event(27, 36, 8, 1800) #
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
-	def rms_agg(self, ok):
+	def rms_calc(self, nbins=20, hist_lr=None):
 
 		# do RMS calculations of slices of raw data. 
 		self.rms_agg = []
@@ -991,8 +1013,26 @@ class Sensor(object):
 			rms = np.sqrt(var)
 			self.rms_agg.append(rms) # a list of all aggregate RMS values to fill histogram
 
-		rstring = 'l=%i\n k=%i\n# events=%i' % (Pixel.l, Pixel.k, len(self.zero_ev))
+		rstring = 'l=%i\nk=%i\n#events=%i\n#pixels=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.rms_ev), self.rms_ev[0].npix, self.rms_npt)
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
+
+
+		# 'quiet events', for measurement of RMS values
+		fig3, ax3 = plt.subplots(1,1)
+		self.rms_val, self.rms_bins, patches = ax3.hist(x=self.rms_agg, bins=nbins, range=hist_lr)
+		ax3.set_xlabel('aggregate rms value of all pixels')
+		ax3.set_ylabel('counts')
+		ax3.set_title('sensor noise test')
+		#ax2.set_xlim(begin, end) # x limits, y limits
+		#ax2.set_ylim()
+		ax3.text(0.70, 0.95, rstring, transform=ax3.transAxes, fontsize=12,
+		verticalalignment='top', bbox=props)
+		ax3.grid(True)
+		fig3.show()	
+
+		# figg, axg = self.fit_gaussian(np.delete(self.rms_bins,-1), self.rms_val)
+		# figg.show() 
+		input('press enter to finish')
 
 	def vsum_select(self, show=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
 
@@ -1040,7 +1080,7 @@ class Sensor(object):
 			ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
 
 
-		self.zero_E =[]
+		self.zeroE =[]
 
 		# this code would do a bunch of random selections inside of the pixel array.
 		# self.zero_ev=[]
@@ -1056,39 +1096,14 @@ class Sensor(object):
 			z.retrieve_selection()
 			# calculate summation over all pixels over all frames defined by the response length (l+k)
 			zsum = sum(self.pix[i].filt[j] for i in z.sel for j in range(z.i + v_window[0], z.i+Pixel.l+Pixel.k+v_window[1]))			
-			self.zero_E.append(zvsum)
-
-		# do RMS calculations of slices of raw data. 
-		self.rms_agg = []
-
-		# every event has a bunch of pixels for which we want to calculate the total RMS
-		for r in self.rms_ev :
-
-			# reset aggregate variance from Event.npix many channels.
-			var = 0
-
-			# get the list of relevant pixels 
-			r.retrieve_selection()
-
-			### maybe a generator expression version can work, would have to compare speeds versus using 
-			### explicit loop.
-
-			# var = sum(np.var(self.pix[i].data[r.i:r.i+self.rms_npt]) for i in r.sel)
-
-			# for each pixel, calculate the variance over specified number of frames.
-			for i in r.sel :	
-				# calculate the variance of the relevant slice (quiet point in the dataset)
-				var += np.var(self.pix[i].data[r.i:r.i+self.rms_npt])
-			# this is the aggregate RMS of 'Event.npix' many channels. they'll be placed in a list
-			rms = np.sqrt(var)
-			self.rms_agg.append(rms) # a list of all aggregate RMS values to fill histogram
+			self.zeroE.append(zsum)
 
 
 		# plot histograms for energy spectrum
 
 		# set up strings/dict for textboxes to be used in plots.
-		string = 'l=%i \n k=%i\n # events=%i' % (Pixel.l, Pixel.k, len(self.alpha_events))		
-		zstring = 'l=%i\n k=%i\n# events=%i' % (Pixel.l, Pixel.k, len(self.zero_ev))
+		string = 'l=%i\nk=%i\n#events=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)		
+		zstring = 'l=%i\nk=%i\n#events=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.zero_ev), Pixel.l+Pixel.k)
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
 
 		if isinstance(axis, ax_obj) : # axis supplied
@@ -1118,29 +1133,17 @@ class Sensor(object):
 
 			# FAKE EVENTS, FOR ZERO PEAK
 			fig2, ax2 = plt.subplots(1,1)
-			self.val, self.bins, patches = ax2.hist(x=self.zero_E, bins=nbins[1], range=hist_lr[1])
+			# retrieve histogram values and bins so we can fit gaussian to our histogram.
+			self.val, self.bins, patches = ax2.hist(x=self.zeroE, bins=nbins[1], range=hist_lr[1])
 			ax2.set_xlabel('Volts, summed over event pixels and frames')
 			ax2.set_ylabel('counts')
 			ax2.set_title('sensor noise "zero peak"')
 			#ax2.set_xlim(begin, end) # x limits, y limits
 			#ax2.set_ylim()
-			# ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
-			# 	verticalalignment='top', bbox=props)
+			ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
+				verticalalignment='top', bbox=props)
 			ax2.grid(True)
 			fig2.show()		
-
-			# 'quiet events', for measurement of RMS values
-			fig3, ax3 = plt.subplots(1,1)
-			self.val, self.bins, patches = ax2.hist(x=self.zero_E, bins=nbins[1], range=hist_lr[1])
-			ax3.set_xlabel('Volts, summed over event pixels and frames')
-			ax3.set_ylabel('counts')
-			ax3.set_title('sensor noise "zero peak"')
-			#ax2.set_xlim(begin, end) # x limits, y limits
-			#ax2.set_ylim()
-			# ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
-			# 	verticalalignment='top', bbox=props)
-			ax3.grid(True)
-			fig3.show()	
 
 			figg, axg = self.fit_gaussian(np.delete(self.bins,-1), self.val)
 			figg.show() 
@@ -1178,8 +1181,8 @@ class Sensor(object):
 		# y = data
 
 
-
-		init  = [1.0, 0.5, 0.5, 0.5]
+		#		A,    mu, sigma, off 
+		init  = [30, -2.7, 1, 0]
 		out   = leastsq( errfunc, init, args=(x, y))
 		
 		c = out[0]
@@ -2550,7 +2553,7 @@ class Event(object):
 		self.shape = shape
 
 
-	def rretrieve_selection(self) :
+	def retrieve_selection(self) :
 
 		if self.shape == 'c' :
 			self.circle()
