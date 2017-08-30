@@ -1099,11 +1099,17 @@ class Sensor(object):
 			self.zeroE.append(zsum)
 
 
-		# plot histograms for energy spectrum
+		### plot histograms for energy spectrum ###
 
 		# set up strings/dict for textboxes to be used in plots.
-		string = 'l=%i\nk=%i\n#events=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)		
-		zstring = 'l=%i\nk=%i\n#events=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.zero_ev), Pixel.l+Pixel.k)
+
+		# alpha energy histogram info
+		string = 'l=%i, k=%i\nnevent=%i\nnpt/event=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)
+
+		# noise 'zero' peak histogram info		
+		zstring = 'l=%i, k=%i\nnevent=%i\nnpt/event=%i\nnpix=%i' % (Pixel.l, Pixel.k, len(self.zero_ev), Pixel.l+Pixel.k, self.zero_ev[0].npix)
+		
+		# text box settings
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
 
 		if isinstance(axis, ax_obj) : # axis supplied
@@ -1120,9 +1126,13 @@ class Sensor(object):
 
 			# REAL EVENTS
 			fig1, ax1 = plt.subplots(1,1)
-			ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
+			n1, bins1, patches1 = ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
 			ax1.set_xlabel('Volts, summed over event pixels and frames')
 			ax1.set_ylabel('counts')
+			ax1_s.twiny()
+
+			### these are the scaled values... we want these to line up with the unscaled vsum values.
+			### bins1/(Pixel.l+1)
 			ax1.set_title('alpha energy peak')
 			#ax1.set_xlim(begin, end) # x limits, y limits
 			#ax1.set_ylim()
@@ -1134,7 +1144,7 @@ class Sensor(object):
 			# FAKE EVENTS, FOR ZERO PEAK
 			fig2, ax2 = plt.subplots(1,1)
 			# retrieve histogram values and bins so we can fit gaussian to our histogram.
-			self.val, self.bins, patches = ax2.hist(x=self.zeroE, bins=nbins[1], range=hist_lr[1])
+			n2, bins2, patches2 = ax2.hist(x=self.zeroE, bins=nbins[1], range=hist_lr[1])
 			ax2.set_xlabel('Volts, summed over event pixels and frames')
 			ax2.set_ylabel('counts')
 			ax2.set_title('sensor noise "zero peak"')
@@ -1145,7 +1155,7 @@ class Sensor(object):
 			ax2.grid(True)
 			fig2.show()		
 
-			figg, axg = self.fit_gaussian(np.delete(self.bins,-1), self.val)
+			figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
 			figg.show() 
 			input('press enter to finish')
 
