@@ -1105,7 +1105,7 @@ class Sensor(object):
 
 		# alpha energy histogram info
 		string = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)
-
+		binstring = 'nbin=%i\nlimits=[%i,%i]' % (nbins[0], hist_lr[0][0], hist_lr[0][1])
 		# noise 'zero' peak histogram info		
 		zstring = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i\nnpix=%i' % (Pixel.l, Pixel.k, len(self.zero_ev), Pixel.l+Pixel.k, self.zero_ev[0].npix)
 		
@@ -1127,7 +1127,8 @@ class Sensor(object):
 			# REAL EVENTS
 			fig1, ax1 = plt.subplots(1,1)
 			val1, bins1, patches1 = ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
-			ax1.set_xlabel('Voltage summation (over pixels and frames defined by events)')
+			ax1.set_xlabel('Volts (summed over pixels and frames defined by events)')
+			ax1.set_xticks(bins1)
 			ax1.set_ylabel('counts')
 			ax1_s = ax1.twiny()
 			min_x, max_x = ax1_s.get_xlim()
@@ -1135,11 +1136,13 @@ class Sensor(object):
 
 			### these are the scaled values... we want these to line up with the unscaled vsum values.
 			### bins1/(Pixel.l+1)
-			ax1.text(0.0, 1.09, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
+			ax1.text(0.0, 1.12, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
 				verticalalignment='center', bbox=titleprops)
 			#ax1.set_xlim(begin, end) # x limits, y limits
 			#ax1.set_ylim()
 			ax1.text(0.72, 0.95, string, transform=ax1.transAxes, fontsize=12,
+				verticalalignment='top', bbox=props)
+			ax1.text(0.72, 0.65, binstring, transform=ax1.transAxes, fontsize=12,
 				verticalalignment='top', bbox=props)
 			# scaled amplitude axis label
 			ax1.text(0.27, 0.95, 'amplitude = (l+1)*vsum', transform=ax1.transAxes, fontsize=11,
@@ -1147,6 +1150,7 @@ class Sensor(object):
 			# voltage summation axis label
 			ax1.text(0.3, 0.05, 'vsum = all selection pixels over frames', transform=ax1.transAxes, fontsize=11,
 				verticalalignment='center')
+						
 			ax1.grid(True)
 			fig1.show()
 
