@@ -807,7 +807,8 @@ class Sensor(object):
 		]
 		
 
-		# specify a range of quiet frames, then generate appropriate events.
+		# specify a range of quiet frames (no significant signal in these time windows), 
+		# then generate appropriate events.
 
 		#top left
 		tl = [
@@ -902,10 +903,10 @@ class Sensor(object):
 
 		]
 
-		# we look at some circular regions. then we generate event objects for them.
+		# we look at some circular regions. then we generate Event objects for them.
 
 
-		# setup calculation for voltage summation of filtered data.
+		# setup calculation for voltage summation of filtered data. These regions
 		self.zero_ev = []
 
 		for t in tl:
@@ -1125,27 +1126,29 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 
 			# REAL EVENTS
+
 			fig1, ax1 = plt.subplots(1,1)
 			val1, bins1, patches1 = ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
 			ax1.set_xlabel('Volts (summed over pixels and frames defined by events)')
 			ax1.set_xticks(bins1)
 			ax1.set_ylabel('counts')
-			ax1_s = ax1.twiny()
-			min_x, max_x = ax1_s.get_xlim()
-			ax1_s.set_xlim(min_x*(Pixel.l+1), max_x*Pixel.l+1)
+			
+			# the amplitude of the original input is the value of the voltge summation multiplied 
+			# by a scalar. amplitude = vsum/(L+1)
+			ax1_scaled = ax1.twiny()
+			ax1_scaled.set_xticks(bins1/(Pixel.l+1))
 
-			### these are the scaled values... we want these to line up with the unscaled vsum values.
-			### bins1/(Pixel.l+1)
+
+
 			ax1.text(0.0, 1.12, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
 				verticalalignment='center', bbox=titleprops)
-			#ax1.set_xlim(begin, end) # x limits, y limits
-			#ax1.set_ylim()
+
 			ax1.text(0.72, 0.95, string, transform=ax1.transAxes, fontsize=12,
 				verticalalignment='top', bbox=props)
 			ax1.text(0.72, 0.65, binstring, transform=ax1.transAxes, fontsize=12,
 				verticalalignment='top', bbox=props)
 			# scaled amplitude axis label
-			ax1.text(0.27, 0.95, 'amplitude = (l+1)*vsum', transform=ax1.transAxes, fontsize=11,
+			ax1.text(0.27, 0.95, r'$amplitude = \frac{vsum}{L+1}$', transform=ax1.transAxes, fontsize=11,
 				verticalalignment='center')
 			# voltage summation axis label
 			ax1.text(0.3, 0.05, 'vsum = all selection pixels over frames', transform=ax1.transAxes, fontsize=11,
@@ -1166,6 +1169,10 @@ class Sensor(object):
 			ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
 				verticalalignment='top', bbox=props)
 			ax2.grid(True)
+			
+			ax2_scaled = ax1.twiny()
+			ax2_scaled.set_xticks(bins2/(Pixel.l+1))
+
 			fig2.show()		
 
 			figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
