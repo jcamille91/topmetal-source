@@ -19,6 +19,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid.inset_locator import inset_axes
 from matplotlib import axes
+import matplotlib.ticker as ticker
 ax_obj = axes.Axes
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize, LinearSegmentedColormap
@@ -272,11 +273,11 @@ class Sensor(object):
 
 			# input raw data from hdf5 file we just opened.
 			if ((npt == False) or (npt >= self.daq_length)) :
-				print('set avg/rms calculation length to raw data array length =', self.daq_length)
+				print('set baseline and rms calculation length to raw data array length =', self.daq_length)
 				self.pix = [Pixel(i, data[i], np.mean(data[i]), np.std(data[i])) for i in range(self.nch)]
 			
 			else :
-				print('set avg/rms calculation length to =', npt, '.')
+				print('set baseline and rms calculation length to =', npt, '.')
 				print('data array length is ', self.daq_length)
 				self.pix = [Pixel(i, data[i], np.mean(data[i][:npt]), np.std(data[i][:npt])) for i in range(self.nch)]
 		
@@ -301,11 +302,10 @@ class Sensor(object):
 		# for j in range(self.dead) :
 		# 	self.pix[j].av
 
-		print(self.infile, "contains", self.daq_length, "datapoints per channel with timestep=", self.tsample, "seconds")
-		print(npt, "points used in calculation for each channel's baseline and rms in Volts.")
+		print("\ninput file contains %i datapoints per channel with timestep=%.6f seconds" % (self.daq_length, self.tsample))
+		print(npt, "points used in calculation for each channel's baseline and rms in Volts.\n")
 
-	def make_gaussian_ch(self, sigma, mu):
-		pass
+
 
 	def make_pixel(self, choose, mV_noise = 1):
 		'''
@@ -333,10 +333,17 @@ class Sensor(object):
 		# define number of points for dataset.
 		# make sure there are enough points to accomodate 
 		# whatever features are defined below.
-		self.daq_length = 100000
 		
+		self.fineness = 1 # increasing this increases the total number of points,
+		# but makes the spacing smaller between each point defining the exponential function.
+		# so if we think of this as increased sampling, the number of samples increases, but
+		# T_sample decreases, so the effective fall time in seconds is the same, even if M
+		# has more samples. 
+
+		self.daq_length = 100000*self.fineness
+
 		# number of points defining each pulse.
-		M_npt = 1000
+		M_npt = 1000*self.fineness
 
 		# signal baseline and noise.
 		baseline = 0.8
@@ -359,15 +366,15 @@ class Sensor(object):
 			# specify M=tau, peak location, amplitude, and the number of points to define the peak.
 			
 			#### one pulse
-			# M_i = np.array([40], dtype=np.float64)
-			# M_loc = np.array([50000])
-			# M_a = np.array([1])
+			M_i = np.array([20], dtype=np.float64)
+			M_loc = np.array([50000])
+			M_a = np.array([0.007])
 
 			#### a few pulses with different parameters
-			M_i = np.array([70, 70, 60, 5], dtype=np.float64)
-			M_loc = np.array([1000, 3000, 5000, 8000])
-			# M_a = np.array([0.02, 0.015, 0.011, 0.015])
-			M_a = np.array([0.008, 0.008, 0.008, 0.008])
+			# M_i = np.array([70, 70, 60, 5], dtype=np.float64)
+			# M_loc = np.array([1000, 3000, 5000, 8000])
+			# # M_a = np.array([0.02, 0.015, 0.011, 0.015])
+			# M_a = np.array([0.008, 0.008, 0.008, 0.008])
 
 			#### variable number (n) of pulses with same tau and amplitude
 			# n = 20
@@ -387,9 +394,27 @@ class Sensor(object):
 			# build an array with exponentially decaying pulses just defined above.
 			exp = np.ones(self.daq_length, dtype=np.float64)*baseline
 			for i in range(npk) :
-				exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, M_npt-1, M_npt)) 
+				exp[M_loc[i]:M_loc[i]+M_npt] += M_a[i]*np.exp(-(1.0/M_i[i])*np.linspace(0, (M_npt-1), M_npt)) 
 
 			signal = exp + noise
+
+		elif choose == 'ball' :
+
+			M = float(3)
+			loc = 50000
+			amplitude =  0.20
+			theta = 18
+
+			ball = np.ones(self.daq_length, dtype=np.float64)*baseline
+
+
+
+			# tau/theta = 1/10, 1/40, 1/20
+
+			ball[loc:loc+M_npt] += (amplitude)/(M-theta) * (np.exp(-(1.0/M)*np.linspace(0, M_npt-1, M_npt)) \
+			- np.exp(-(1.0/theta)*np.linspace(0, M_npt-1, M_npt))) 
+
+			signal = ball + noise
 
 		elif choose == 'step' :
 
@@ -430,7 +455,7 @@ class Sensor(object):
 				sgwin = 15, sgorder = 4, l_s=4, k_s=2, choose='sg',		
 				pd_save = 0,  			 
 			    
-			    fit_length = 300, fudge = 20, Mrange = [10.0,45.0],							   # lsq fit
+			    fit_length = 300, fudge = 20, Mrange = [10.0,45.0],						   # lsq fit
 			    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	   # format: (min/max)
 			    guess = [0.008, 1.0/20, 0],						   				   		   # amplitude, 1/tau, offset
 			    
@@ -531,7 +556,7 @@ class Sensor(object):
 
 		Pixel.l = l # fixing l and k shaper parameters
 		Pixel.k = k
-		Pixel.M_def = M_def # default M is no peaks are found.
+		Pixel.M_def = float(M_def) # default M if no peaks are found or skip peakdet with 'simple' option.
 		Pixel.shaper_offset = shaper_offset # this should generally be negative
 
 		# define a peak object for a 'zero peak' channel just once, so it can be reused.
@@ -558,11 +583,11 @@ class Sensor(object):
 		Pixel.skinny_pk = peaks_handle(1, LEFT_s, RIGHT_s, l_arr_s, k_arr_s, M_s)
 
 		print('analysis parameters... \n')
-		print('peak detection: sign = %i, threshold = %f, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
+		print('peak detection: sign = %i, threshold = %.3fV, minsep = %i, \n sgwin = %i, sgorder = %i. \n' \
 			% (sign, threshold, minsep, sgwin, sgorder))
 		print('pulse fitting: fudge = %i, fit length = %i \n'  % (fudge, fit_length))
 		print('shaping filter: l = %i, k = %i, \n default M = %i, offset = %i \n' % (l, k, M_def, shaper_offset))
-		input('press enter to analyze with given parameters')
+		input('press enter to analyze with given parameters\n')
 
 
 		if read : # if we have read in a saved list of peaks for each channel, 
@@ -831,9 +856,9 @@ class Sensor(object):
 		(80,450),
 		(1700,1850),
 		(2000,2100),
+		# (2100,2300),
+		(2600,2800),
 		(2700,2800),
-		(2100,2300),
-		(2500,2800),
 		(2900,3000),
 		(3300,3700),
 		(3800,4200),
@@ -855,11 +880,6 @@ class Sensor(object):
 		(18560,18700),
 		(18800, 19000),
 		(21100,21300),
-		(16000,16200),
-		(16620, 17500),
-		(17820,18000),
-		(18560,18700),
-		(16620, 17500),
 		]
 
 		#bottom left
@@ -893,7 +913,7 @@ class Sensor(object):
 		(15220,15300),
 		(15440,15540),
 		(15660,15820),
-		(16600,16900),
+		(16750,16900),
 		(17220,17400),
 		(17600,18040),
 		(18160,18260),
@@ -909,10 +929,10 @@ class Sensor(object):
 		# setup calculation for voltage summation of filtered data. These regions
 		self.zero_ev = []
 
-		for t in tl:
-			n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
-			for j in range(n):
-				self.zero_ev.append(Event(x=12,y=12,r=10, i = t[0]+j*(Pixel.l+Pixel.k), shape='c'))
+		# for t in tl:
+		# 	n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
+		# 	for j in range(n):
+		# 		self.zero_ev.append(Event(x=12,y=12,r=10, i = t[0]+j*(Pixel.l+Pixel.k), shape='c'))
 
 		for t in tr:
 			n = int((t[1]-t[0]) / (Pixel.l+Pixel.k))
@@ -932,10 +952,10 @@ class Sensor(object):
 		# setup calculation for aggregate RMS calculation for raw, unfiltered data
 		self.rms_ev =[]
 
-		for t in tl:
-			n = int((t[1]-t[0]) / (rms_npt))
-			for j in range(n):
-				self.rms_ev.append(Event(x=12,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
+		# for t in tl:
+		# 	n = int((t[1]-t[0]) / (rms_npt))
+		# 	for j in range(n):
+		# 		self.rms_ev.append(Event(x=12,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
 
 		for t in tr:
 			n = int((t[1]-t[0]) / (rms_npt))
@@ -952,28 +972,6 @@ class Sensor(object):
 			for j in range(n):
 				self.rms_ev.append(Event(x=59,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
 
-		# self.rms_ev2 = []
-
-		# for t in tl:
-		# 	n = int((t[1]-t[0]) / (rms_npt))
-		# 	for j in range(n):
-		# 		self.rms_ev2.append(Event(x=12,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
-
-		# for t in tr:
-		# 	n = int((t[1]-t[0]) / (rms_npt))
-		# 	for j in range(n):
-		# 		self.rms_ev2.append(Event(x=59,y=12,r=10, i = t[0]+j*(rms_npt), shape='c'))
-
-		# for t in bl:
-		# 	n = int((t[1]-t[0]) / (rms_npt))
-		# 	for j in range(n):
-		# 		self.rms_ev2.append(Event(x=12,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
-
-		# for t in br:
-		# 	n = int((t[1]-t[0]) / (rms_npt))
-		# 	for j in range(n):
-		# 		self.rms_ev2.append(Event(x=59,y=59,r=10, i = t[0]+j*(rms_npt), shape='c'))
-
 		# # 'blobs' some  
 		# ev = Event[45, 15, 15, 2135) #
 		# ev = Event(38, 46, 16, 3020) #
@@ -987,18 +985,19 @@ class Sensor(object):
 		# ev = Event(27, 36, 8, 1800) #
 		# self.alpha_events = [ev1, ev2, ev3, ev4]
 
-	def rms_calc(self, nbins=20, hist_lr=None):
+	def rms_calc(self, nbins=20, hist_lr=None, threshold=10000):
 
 		# do RMS calculations of slices of raw data. 
 		self.rms_agg = []
-
+		self.noisyevents = []
 		# every event has a bunch of pixels for which we want to calculate the total RMS
 		for r in self.rms_ev :
 
 			# reset aggregate variance from Event.npix many channels.
+
 			var = 0
 
-			# get the list of relevant pixels 
+			# get the list of relevant pixels, they're assigned to r.sel 
 			r.retrieve_selection()
 
 			### maybe a generator expression version can work, would have to compare speeds versus using 
@@ -1012,9 +1011,12 @@ class Sensor(object):
 				var += np.var(self.pix[i].data[r.i:r.i+self.rms_npt])
 			# this is the aggregate RMS of 'Event.npix' many channels. they'll be placed in a list
 			rms = np.sqrt(var)
+			if rms > threshold :
+				r.noisyrms = rms
+				self.noisyevents.append(r)
 			self.rms_agg.append(rms) # a list of all aggregate RMS values to fill histogram
 
-		rstring = 'l=%i\nk=%i\n#events=%i\n#pixels=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.rms_ev), self.rms_ev[0].npix, self.rms_npt)
+		rstring = 'l=%i\nk=%i\n#events=%i\n#pixels=%i\nnpt=%i' % (Pixel.l, Pixel.k, len(self.rms_ev), self.rms_ev[-1].npix, self.rms_npt)
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
 
 
@@ -1035,7 +1037,7 @@ class Sensor(object):
 		# figg.show() 
 		input('press enter to finish')
 
-	def vsum_select(self, show=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
+	def vsum_select(self, show_alpha=True, show_zero=True, show_events=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
 
 		'''
 		This function makes takes selections of pixels within circles, or other shapes,
@@ -1058,61 +1060,61 @@ class Sensor(object):
 		M is off by more than 1 or 2)
 
 		'''
+		if show_alpha :
 
-		ring = [] # contains info for each as a tuple so we can easily print later.
-		self.alphaE = [] # contains voltage summation for a single event.
+			ring = [] # contains info for each as a tuple so we can easily print later.
+			self.alphaE = [] # contains voltage summation for a single event.
 
-		# get location for every event. get selection of pixels based on this location for 
-		# each event. store the voltage summation for histogram.
+			# get location for every event. get selection of pixels based on this location for 
+			# each event. store the voltage summation for histogram.
 
-		for ev in self.alpha_events :
-			
-			# retrieve a list of pixels defining the region of interest for this event.
-			ev.retrieve_selection()
+			for ev in self.alpha_events :
+				
+				# retrieve a list of pixels defining the region of interest for this event.
+				ev.retrieve_selection()
 
-			# we'll use generator-expressions over list comprehensions here since we
-			# don't need to store all the constituent values to be summed.
-			vsum = sum(self.pix[i].filt[j] for i in ev.sel for j in range(ev.i + v_window[0], ev.i+Pixel.l+Pixel.k+v_window[1]))
+				# we'll use generator-expressions over list comprehensions here since we
+				# don't need to store all the constituent values to be summed.
+				vsum = sum(self.pix[i].filt[j] for i in ev.sel for j in range(ev.i + v_window[0], ev.i+Pixel.l+Pixel.k+v_window[1]))
 
-			#vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
-			#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
-			
-			self.alphaE.append(vsum)
-			ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
+				#vsum = np.sum(np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])]))
+				#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
+				
+				self.alphaE.append(vsum)
+				ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
+
+		if show_zero :
+
+			self.zeroE =[]
+
+			# this code would do a bunch of random selections inside of the pixel array.
+			# self.zero_ev=[]
+			# for k in range(nfake) :
+			# 	x,y = np.random.randint(10,61,size=2)
+			# 	i = np.random.randint(0,self.daq_length-(Pixel.l+Pixel.l))
+			# 	self.zero_ev.append(Event(x=x, y=y, r=10, i=i, shape='c'))
 
 
-		self.zeroE =[]
-
-		# this code would do a bunch of random selections inside of the pixel array.
-		# self.zero_ev=[]
-		# for k in range(nfake) :
-		# 	x,y = np.random.randint(10,61,size=2)
-		# 	i = np.random.randint(0,self.daq_length-(Pixel.l+Pixel.l))
-		# 	self.zero_ev.append(Event(x=x, y=y, r=10, i=i, shape='c'))
-
-
-		# do summations for zero events - places where there isn't signal.
-		for z in self.zero_ev :
-			# get the list of relevant pixels
-			z.retrieve_selection()
-			# calculate summation over all pixels over all frames defined by the response length (l+k)
-			zsum = sum(self.pix[i].filt[j] for i in z.sel for j in range(z.i + v_window[0], z.i+Pixel.l+Pixel.k+v_window[1]))			
-			self.zeroE.append(zsum)
+			# do summations for zero events - places where there isn't signal.
+			for z in self.zero_ev :
+				# get the list of relevant pixels
+				z.retrieve_selection()
+				# calculate summation over all pixels over all frames defined by the response length (l+k)
+				zsum = sum(self.pix[i].filt[j] for i in z.sel for j in range(z.i + v_window[0], z.i+Pixel.l+Pixel.k+v_window[1]))			
+				self.zeroE.append(zsum)
 
 
 		### plot histograms for energy spectrum ###
 
-		# set up strings/dict for textboxes to be used in plots.
-
-		# alpha energy histogram info
-		string = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)
-		binstring = 'nbin=%i\nlimits=[%i,%i]' % (nbins[0], hist_lr[0][0], hist_lr[0][1])
-		# noise 'zero' peak histogram info		
-		zstring = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i\nnpix=%i' % (Pixel.l, Pixel.k, len(self.zero_ev), Pixel.l+Pixel.k, self.zero_ev[0].npix)
 		
 		# text box settings
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
+		props2 = dict(boxstyle='round', facecolor='red', alpha=0.5)
+
 		titleprops = dict(boxstyle='square', facecolor='cyan', alpha=1)
+		titleprops2 = dict(boxstyle='square', facecolor='red', alpha=1)
+
+
 		if isinstance(axis, ax_obj) : # axis supplied
 			axis.hist(x=self.alphaE, bins=nbins, range=hist_lr[0])
 			axis.set_xlabel('Volts, summed over event pixels and frames')
@@ -1126,61 +1128,98 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 
 			# REAL EVENTS
+			if show_alpha :
+				string = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)
+				binstring = 'histogram\n%i bins\n[%fV,%fV]' % (nbins[0], hist_lr[0][0], hist_lr[0][1])
+				
+				fig1, ax1 = plt.subplots(1,1)
+				val1, bins1, patches1 = ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
 
-			fig1, ax1 = plt.subplots(1,1)
-			val1, bins1, patches1 = ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
-			ax1.set_xlabel('Volts (summed over pixels and frames defined by events)')
-			ax1.set_xticks(bins1)
-			ax1.set_ylabel('counts')
-			
-			# the amplitude of the original input is the value of the voltge summation multiplied 
-			# by a scalar. amplitude = vsum/(L+1)
-			ax1_scaled = ax1.twiny()
-			ax1_scaled.set_xticks(bins1/(Pixel.l+1))
+				ax1.set_xlabel('Volts (summed over pixels and frames defined by events)')
+				ax1.set_xticks(bins1)
+				ax1.set_ylabel('counts')
+				
+				# the amplitude of the original input is the value of the voltge summation multiplied 
+				# by a scalar. amplitude = vsum/(L+1)
+				ax1_scaled = ax1.twiny()
+				ax1_scaled.set_xticks(bins1/(Pixel.l+1))
 
 
 
-			ax1.text(0.0, 1.12, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
-				verticalalignment='center', bbox=titleprops)
+				ax1.text(0.0, 1.12, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
+					verticalalignment='center', bbox=titleprops)
 
-			ax1.text(0.72, 0.95, string, transform=ax1.transAxes, fontsize=12,
-				verticalalignment='top', bbox=props)
-			ax1.text(0.72, 0.65, binstring, transform=ax1.transAxes, fontsize=12,
-				verticalalignment='top', bbox=props)
-			# scaled amplitude axis label
-			ax1.text(0.27, 0.95, r'$amplitude = \frac{vsum}{L+1}$', transform=ax1.transAxes, fontsize=11,
-				verticalalignment='center')
-			# voltage summation axis label
-			ax1.text(0.3, 0.05, 'vsum = all selection pixels over frames', transform=ax1.transAxes, fontsize=11,
-				verticalalignment='center')
-						
-			ax1.grid(True)
-			fig1.show()
+				ax1.text(0.72, 0.95, string, transform=ax1.transAxes, fontsize=12,
+					verticalalignment='top', bbox=props)
+				ax1.text(0.72, 0.65, binstring, transform=ax1.transAxes, fontsize=12,
+					verticalalignment='top', bbox=props)
+				# scaled amplitude axis label
+				ax1.text(0.27, 0.95, r'$amplitude = \frac{vsum}{L+1}$', transform=ax1.transAxes, fontsize=11,
+					verticalalignment='center')
+				# voltage summation axis label
+				ax1.text(0.3, 0.05, 'vsum = all selection pixels over frames', transform=ax1.transAxes, fontsize=11,
+					verticalalignment='center')
+							
+				ax1.grid(True)
+				fig1.show()
+
 
 			# FAKE EVENTS, FOR ZERO PEAK
-			fig2, ax2 = plt.subplots(1,1)
-			# retrieve histogram values and bins so we can fit gaussian to our histogram.
-			val2, bins2, patches2 = ax2.hist(x=self.zeroE, bins=nbins[1], range=hist_lr[1])
-			ax2.set_xlabel('Volts, summed over event pixels and frames')
-			ax2.set_ylabel('counts')
-			ax2.set_title('sensor noise "zero peak"')
-			#ax2.set_xlim(begin, end) # x limits, y limits
-			#ax2.set_ylim()
-			ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
-				verticalalignment='top', bbox=props)
-			ax2.grid(True)
-			
-			ax2_scaled = ax1.twiny()
-			ax2_scaled.set_xticks(bins2/(Pixel.l+1))
+			if show_zero :
+				# rms and variance values for zero peak summation values. each summed value corresponds to an input amplitude
+				# related by A(L+1)=VSUM where L is the trapezoidal filter parameter.
 
-			fig2.show()		
+				VAR=np.var(self.zeroE)/((Pixel.l+1)**2)/self.zero_ev[0].npix
+				SIG=np.std(self.zeroE)/(Pixel.l+1)/np.sqrt(self.zero_ev[0].npix)
 
-			figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
-			figg.show() 
-			input('press enter to finish')
+				zstring = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i\nnpix=%i' % (Pixel.l, Pixel.k, len(self.zero_ev), Pixel.l+Pixel.k, self.zero_ev[0].npix)
+				zstring2 = 'per pixel amplitude\nstatistics:\nsigma=%.2fmV' % (SIG*1000)
+				zstring3 = 'histogram:\n%i bins\n[%.1fV, %.1fV]' % (nbins[1], hist_lr[1][0], hist_lr[1][1])
+				fig2, ax2 = plt.subplots(1,1)
+				# retrieve histogram values and bins so we can fit gaussian to our histogram.
+				val2, bins2, patches2 = ax2.hist(x=self.zeroE, bins=nbins[1], range=hist_lr[1])
+				
+
+				ax2.set_xlabel('Volts (summation over pixels and frames)')
+				ax2.set_ylabel('counts')
+				ax2.set_xticks(bins2)
+
+				ax2.text(0.70, 0.95, zstring, transform=ax2.transAxes, fontsize=12,
+					verticalalignment='top', bbox=props2)
+				ax2.text(0.70, 0.65, zstring3, transform=ax2.transAxes, fontsize=12,
+					verticalalignment='top', bbox=props2)
+				ax2.text(0.70, 0.40, zstring2, transform=ax2.transAxes, fontsize=12,
+					verticalalignment='top', bbox=props2)
+				ax2.text(0.3, 1.12, 'Equivalent Input Amplitude', transform=ax2.transAxes, fontsize=11,
+					verticalalignment='center')
+				ax2.text(0.8, 1.12, r'$(A=\frac{vsum}{L+1})$', transform=ax2.transAxes, fontsize=11,
+					verticalalignment='center')
+				ax2.text(-0.1, 1.12, 'Zero(Noise) Peak', transform=ax2.transAxes, fontsize=12,
+					verticalalignment='center', bbox=titleprops2)
+
+
+				# the amplitude of the original input is the value of the voltge summation multiplied 
+				# by a scalar. amplitude = vsum/(L+1)
+				mn, mx = ax2.get_xlim()				
+				ax2s=ax2.twiny()
+				ax2s.set_xlim(mn/(Pixel.l+1), mx/(Pixel.l+1))
+				# ax2s = ax2.twiny()
+				# ax2s.set_xticks(bins2/(Pixel.l+1))
+
+
+				# reset number of ticks at the very end.
+				ax2s.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
+				ax2.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
+				ax2.grid(True)
+				fig2.show()		
+
+				# figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
+				# figg.show() 
+
+				input('press enter to finish')
 
 		# show the the middle most frame of events of interest.
-		if show :
+		if show_events and show_alpha :
 
 			fig4, ax4 = plt.subplots(1,1)
 
@@ -1210,7 +1249,7 @@ class Sensor(object):
 		# x = np.arange(len(data))
 		# y = data
 
-
+		#		p[0]  p[1] p[2]  p[3]
 		#		A,    mu, sigma, off 
 		init  = [30, -2.7, 1, 0]
 		out   = leastsq( errfunc, init, args=(x, y))
@@ -1222,6 +1261,7 @@ class Sensor(object):
 		print("1.000, 0.200, 0.300, 0.625")
 		print("Fit Coefficients:")
 		print(c[0],c[1],abs(c[2]),c[3])
+
 
 		fig, ax = plt.subplots(1,1)
 		ax.step(x, fitfunc(c, x))
@@ -1235,11 +1275,13 @@ class Sensor(object):
 	def fit_hist(self, nbins = [100,100,100,100], hlr=[], plr=[(0,120), (0,300), (0,400), (0,1)],  axis=0) :
 		
 		''' 
-		generate a histogram with the range of fit parameter values we are dealing with.
+		generate histograms with the range of fit parameter values we are dealing with.
 
 		input:
-		### for nbins and lr, each is a 4 element list.
+
+		for 'nbins' and 'lr', each is a 4 element list.
 		so [0]=M [1]=A [2]=OFF [3]=XSQ 
+
 		-nbins : number of bins for histogram. 
 		-plr : left and right xlimits for plot.
 		-hlr : lef and right bounds for histogram bins.
@@ -2551,7 +2593,7 @@ class Event(object):
 	row = 72
 	def __init__(self, x, y, i, r=None, a=None, b=None, angle=0, shape='c'):
 		'''
-		input: behave differently for different shape strings, read below.
+		inputs behave differently for different shapes, read below.
 
 		shape == 'c' (circle)
 		-x,y : ints representing center of circle.
@@ -2581,7 +2623,7 @@ class Event(object):
 		self.angle = angle * np.pi/180 # convert degree to radians
 		self.i = i
 		self.shape = shape
-
+		self.tag = None # optional string to further identify an event.
 
 	def retrieve_selection(self) :
 
@@ -2623,7 +2665,7 @@ class Event(object):
 
 		rect = [((i, j), i+j*self.row) for j in range(self.y-major, self.y+major) for i in range(self.x-major,self.x+major)]
 
-		# cut out the ellipse. this is just an ellipse distance equation with an angle included..
+		# cut out the ellipse. this is just an ellipse distance equation with an angle included.
 		self.sel = np.array([rect[i][1] for i in range(len(rect)) if \
 		(((((rect[i][0][0]-self.x)*cos+(rect[i][0][1]-self.y)*sin2)**2)/a2) + \
 		((((rect[i][0][0]-self.x)*sin-(rect[i][0][1]-self.y)*cos2)**2)/b2)) < 1])
