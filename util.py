@@ -803,7 +803,7 @@ class Sensor(object):
 		Event(x=22, y=48, r=12, i=12850, shape='c'), #
 		Event(x=9, y=28, r=9, i=13060, shape='c'), #
 		Event(x=42, y=17, r=12, i=12460, shape='c'), #
-		Event(x=18, y=28, r=10, i=13700, shape='c'), #
+		Event(x=18, y=28, r=10, i=13695, shape='c'), #
 		Event(x=20, y=9, r=9, i=14425, shape='c'), # elliptical and focused
 		Event(x=28, y=9, r=9, i=15140, shape='c'), #
 		Event(x=18, y=23, r=9, i=15475, shape='c'), #
@@ -831,7 +831,21 @@ class Sensor(object):
 
 		]
 		
+		self.alpha_events2 = [
 
+
+		# these six events are some of the bigger valued and more isolated ones.
+		# they are candidates for being charge clouds from a completely ionized alpha.
+		Event(x=36, y=29, r=20, i=10610, shape='c'),
+		Event(x=20, y=28, r=20, i=13695, shape='c'), # this one isn't very isolated
+		Event(x=26, y=42, r=20, i=16595, shape='c'),
+		Event(x=40, y=30, r=20, i=20550, shape='c'),
+		Event(x=31, y=20, r=20, i=23700, shape='c'),
+		Event(x=20, y=29, r=20, i=24940, shape='c')
+		
+
+
+		]
 		# specify a range of quiet frames (no significant signal in these time windows), 
 		# then generate appropriate events.
 
@@ -1062,13 +1076,13 @@ class Sensor(object):
 		'''
 		if show_alpha :
 
-			ring = [] # contains info for each as a tuple so we can easily print later.
+			ev_info = [] # contains info for each as a tuple so we can easily print later.
 			self.alphaE = [] # contains voltage summation for a single event.
 
 			# get location for every event. get selection of pixels based on this location for 
 			# each event. store the voltage summation for histogram.
 
-			for ev in self.alpha_events :
+			for ev in self.alpha_events2 :
 				
 				# retrieve a list of pixels defining the region of interest for this event.
 				ev.retrieve_selection()
@@ -1081,7 +1095,8 @@ class Sensor(object):
 				#valcheck = np.array([self.pix[i].filt[j] for i in circle for j in range(frames[0], frames[1])])
 				
 				self.alphaE.append(vsum)
-				ring.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum))
+
+				ev_info.append((ev.i+(Pixel.l+Pixel.k)/2, ev.x, ev.y, ev.r, vsum, vsum/(Pixel.l+1)))
 
 		if show_zero :
 
@@ -1107,7 +1122,7 @@ class Sensor(object):
 		### plot histograms for energy spectrum ###
 
 		
-		# text box settings
+		# text box settings for plots.
 		props = dict(boxstyle='round', facecolor='cyan', alpha=0.5)
 		props2 = dict(boxstyle='round', facecolor='red', alpha=0.5)
 
@@ -1128,9 +1143,11 @@ class Sensor(object):
 		else : 			# no axis supplied, make standalone plot.
 
 			# REAL EVENTS
+			
 			if show_alpha :
+
 				string = 'L=%i, K=%i\nnevent=%i\nnpt/event=%i' % (Pixel.l, Pixel.k, len(self.alpha_events), Pixel.l+Pixel.k)
-				binstring = 'histogram\n%i bins\n[%fV,%fV]' % (nbins[0], hist_lr[0][0], hist_lr[0][1])
+				binstring = '%i bins\n[%.2fV,%.2fV]' % (nbins[0], hist_lr[0][0], hist_lr[0][1])
 				
 				fig1, ax1 = plt.subplots(1,1)
 				val1, bins1, patches1 = ax1.hist(x=self.alphaE, bins=nbins[0], range=hist_lr[0])
@@ -1141,12 +1158,12 @@ class Sensor(object):
 				
 				# the amplitude of the original input is the value of the voltge summation multiplied 
 				# by a scalar. amplitude = vsum/(L+1)
-				ax1_scaled = ax1.twiny()
-				ax1_scaled.set_xticks(bins1/(Pixel.l+1))
+				ax1s = ax1.twiny()
+				ax1s.set_xticks(bins1/(Pixel.l+1))
 
 
 
-				ax1.text(0.0, 1.12, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
+				ax1.text(-.1, 1.12, 'Alpha Energy Peak', transform=ax1.transAxes, fontsize=12,
 					verticalalignment='center', bbox=titleprops)
 
 				ax1.text(0.72, 0.95, string, transform=ax1.transAxes, fontsize=12,
@@ -1154,12 +1171,15 @@ class Sensor(object):
 				ax1.text(0.72, 0.65, binstring, transform=ax1.transAxes, fontsize=12,
 					verticalalignment='top', bbox=props)
 				# scaled amplitude axis label
-				ax1.text(0.27, 0.95, r'$amplitude = \frac{vsum}{L+1}$', transform=ax1.transAxes, fontsize=11,
+				ax1.text(0.4, 1.12, r'$amplitude = \frac{vsum}{L+1}$', transform=ax1.transAxes, fontsize=11,
 					verticalalignment='center')
 				# voltage summation axis label
 				ax1.text(0.3, 0.05, 'vsum = all selection pixels over frames', transform=ax1.transAxes, fontsize=11,
 					verticalalignment='center')
-							
+				
+				ax1.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
+				ax1s.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
+
 				ax1.grid(True)
 				fig1.show()
 
@@ -1216,7 +1236,7 @@ class Sensor(object):
 				# figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
 				# figg.show() 
 
-				input('press enter to finish')
+			
 
 		# show the the middle most frame of events of interest.
 		if show_events and show_alpha :
@@ -1224,16 +1244,17 @@ class Sensor(object):
 			fig4, ax4 = plt.subplots(1,1)
 
 			# p is a tuple (midpoint, x, y, r)
-			for p in ring:
+			for p in ev_info:
 				input("press enter to show next event:")	
 				ax4.cla()
-				ax4.set_title('frame=%i coordinate=(%i, %i) radius=%i vsum = %fV' % p)
+				ax4.set_title('middle frame=%i coordinate=(%i, %i) radius=%i\nvsum = %.2fV amplitude=%.2fV' % p)
 				self.pixelate_single(sample = int(p[0]), axis = ax4)
 				# add a circle 'artist' to the event we are analyzing
 				circ = plt.Circle((p[1], p[2]), p[3], color = 'r', fill=False, linewidth = 1.5, alpha=1)
 				ax4.add_artist(circ)
 				fig4.show()
 
+		input("press enter to finish")
 
 	def fit_gaussian(self, bins, values) :
 		''' this function takes data values and bins from a histogram then fits a gaussian to them,
@@ -1364,7 +1385,7 @@ class Sensor(object):
 
 			return (M,A,OFF,XSQ)
 
-	def pixelate_multi(self, start, stop, stepsize, stepthru = False, vmin = -0.001, vmax = 0.007, circle=False) :
+	def pixelate_multi(self, start, stop, stepsize, stepthru = False, logscale=False, vmin = -0.001, vmax = 0.007, circle=False) :
 
 		'''
 		input:
@@ -1392,9 +1413,10 @@ class Sensor(object):
 
 		im = ax.imshow(np.zeros((self.row,self.row)), cmap=cm.jet, vmin = vmin, vmax = vmax)
 		
-		for c in circle :
-			circ = plt.Circle((c[0], c[1]), c[2], color = 'r', fill=False, linewidth = 1.5, alpha=1)
-			ax.add_artist(circ)
+		if circle :
+			for c in circle :
+				circ = plt.Circle((c[0], c[1]), c[2], color = 'r', fill=False, linewidth = 1.5, alpha=1)
+				ax.add_artist(circ)
 
 		fig.show()
 		im.axes.figure.canvas.draw()
