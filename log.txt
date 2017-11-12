@@ -1,0 +1,20 @@
+-- 1_6_17 :
+This dataset now includes discimination on tau values. we only use M values found within Mrange.
+this is because really small M tend to be due to noise peaks. really large M we've found to generally be multiple constituent peaks with much smaller M.
+
+We've also seen better results from sgwin=7. previously we'd been using 15, let's look closer at the effect on the data. it looked good for fake data, but fake data doesn't account for ballistic deficit.
+
+a.analyze(read=0, simple=0, select=[],
+				
+	sign = 1, minsep = 50, threshold = 0.008, 								# peak detection						
+	sgwin = 7, sgorder = 4, l_s=4, k_s=2, choose='sg',
+	pd_save=0,		  			 
+    
+    fit_length = 300, fudge = 20, Mrange = [10.0,50.0],						# least squares fit
+    bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	# format: (min/max)
+    guess = [0.008, 1.0/20, 0],						   				 		    # amplitude, 1/tau, offset
+    
+    l = 60, k = 20, M_def = float(20), shaper_offset = -20)
+
+-- 7_7_17 :
+Same as prior dataset, expect that threshold is set to 0.006
