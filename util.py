@@ -50,21 +50,25 @@ PEAKS = namedtuple('PEAKS', 'none few mid many pkch') # for testing peak detecti
 # These functions can be slow when implemented in Python.
 
 # datatypes ... C equivalent
-from ctypes import (
-	c_ulong,	# size_t
-	c_int,		# int
-	c_double, 	# double
-	c_float		# float
-	)
+# from ctypes import (
+# 	c_ulong,	# size_t
+# 	c_int,		# int
+# 	c_double, 	# double
+# 	c_float,		# float
+# 	c_char,
+# 	c_char_p
+# 	)
 
 
 
-from ctypes import (
-	CDLL,		# CDLL used to load desired shared library. 
-	POINTER,	# POINTER creates equivalent of a C pointer.
-	byref,		# byref() for passing pointers to function.
-	Structure 	# ctypes 'Structure' class allows creation of C 'struct'.
-	)
+# from ctypes import (
+# 	CDLL,		# CDLL used to load desired shared library. 
+# 	POINTER,	# POINTER creates equivalent of a C pointer.
+# 	byref,		# byref() for passing pointers to function.
+# 	Structure 	# ctypes 'Structure' class allows creation of C 'struct'.
+# 	)
+
+from ctypes import *
 
 import numpy.ctypeslib as npct
 
@@ -123,6 +127,55 @@ def save_object(obj, outfile):
 def read_object(infile):
 	with open(infile, 'rb') as read:
 		return pickle.load(read)
+
+def demux(rawinfile, dmuxoutfile, mStart=913, mChLen=4, mNCh=5184, mChOff = 1, mChSpl = 2, frameSize=20736):
+		''' 
+		C implemented function for de-multiplexing raw data read from the TCP protocol.
+		the pixel array is time multiplexed, so each frame 
+		(4 time samples for each of the 5184 pixels) is sequential in memory.
+		To get this data in time-order (an array of 5184 channels x total number of samples),
+		we need to find the first frame of data acquisition 'mStart' and input parameters
+		for the data acquisition.
+
+		input:
+
+		(file reading and writing)
+		-infile : input string for .h5/.hdf5 file containing data to be de-multiplexed.
+			using "h5dump -A infile.h5" gives information on datatypes and data array shape.
+		-outfile : input string for .h5/.hdf5 file to be created containing 
+			array of raw data (5184 x daq_length).
+
+		(DAQ parameters)
+		-mStart : When the sensor acquires data, there is some dead time before
+		everything is synchronized and taking meaningful data. Pixels 0-2 are tied to a potential
+		far apart from signal data, so they can easily identify the beginning of a frame. that is, mStart
+		is the first of four time samples of pixel 0.
+		-mChLen : this value refers to the number of time samples per pixel per frame. in this case,
+		there are four time samples per pixel per frame.
+		-mNCh : this refers to the number of channels to be output, also referred to as 'pixels'. This topmetal
+		sensor is a 72x72 square, so there are 5184 pixels.
+		-mChOff, mChSpl, mChLen : mChLen is the numeber of time samples per frame.
+		with these four samples, mChSpl are averaged as a data point. mChOff is the number of
+		samples offset from the first sample to begin averaging.
+		example: mChOff = 1, mChLen = 4, mChSpl = 2. the first sample is skipped, the 2nd and 3rd are averaged,
+		and the fourth is ignored.
+		'''
+
+		# DAQ parameters for this particular dataset.
+		# rawinfile = '../data_TM1x1/out22.h5'
+		# outdmuxfile = '../data_TM1x1/demuxdouble.h5'
+		# mStart = 913
+		# mChLen = 4
+		# mNCh = 72**2
+		# mChOff = 1
+		# mChSpl = 2
+		# frameSize = (72**2)*4
+
+		# call the C function with ctypes
+		lib = CDLL("demux.so")
+		lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+		lib.demux(c_char_p(rawinfile), c_char_p(dmuxoutfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+
 
 class Sensor(object):
 	
@@ -185,54 +238,6 @@ class Sensor(object):
 		# demux DAQ parameters
 		self.demuxoutfile = '/Users/josephcamilleri/notebook/topmetal/data_TM1x1/demuxdouble2.h5'
 		print ("Analyze data from", infile, "for Topmetal sensor with" , self.nch, "channels\n")
-
-	def demux(rawinfile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
-		''' 
-		C implemented function for de-multiplexing raw data read from the TCP protocol.
-		the pixel array is time multiplexed, so each frame 
-		(4 time samples for each of the 5184 pixels) is sequential in memory.
-		To get this data in time-order (an array of 5184 channels x total number of samples),
-		we need to find the first frame of data acquisition 'mStart' and input parameters
-		for the data acquisition.
-
-		input:
-
-		(file reading and writing)
-		-infile : input string for .h5/.hdf5 file containing data to be de-multiplexed.
-			using "h5dump -A infile.h5" gives information on datatypes and data array shape.
-		-outfile : input string for .h5/.hdf5 file to be created containing 
-			array of raw data (5184 x daq_length).
-
-		(DAQ parameters)
-		-mStart : When the sensor acquires data, there is some dead time before
-		everything is synchronized and taking meaningful data. Pixels 0-2 are tied to a potential
-		far apart from signal data, so they can easily identify the beginning of a frame. that is, mStart
-		is the first of four time samples of pixel 0.
-		-mChLen : this value refers to the number of time samples per pixel per frame. in this case,
-		there are four time samples per pixel per frame.
-		-mNCh : this refers to the number of channels to be output, also referred to as 'pixels'. This topmetal
-		sensor is a 72x72 square, so there are 5184 pixels.
-		-mChOff, mChSpl, mChLen : mChLen is the numeber of time samples per frame.
-		with these four samples, mChSpl are averaged as a data point. mChOff is the number of
-		samples offset from the first sample to begin averaging.
-		example: mChOff = 1, mChLen = 4, mChSpl = 2. the first sample is skipped, the 2nd and 3rd are averaged,
-		and the fourth is ignored.
-		'''
-
-		# DAQ parameters for this particular dataset.
-		rawinfile = '../data_TM1x1/out22.h5'
-		outdmuxfile = '../data_TM1x1/demuxdouble.h5'
-		mStart = 913
-		mChLen = 4
-		mNCh = 72**2
-		mChOff = 1
-		mChSpl = 2
-		frameSize = (72**2)*4
-
-		# call the C function with ctypes
-		lib = CDLL("demux.so")
-		lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
-		lib.demux(c_char_p(self.infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 
 	def load_pixels(self, npt=25890, cut=[], gauss_test=False, sigma=0, mean=0):
@@ -2777,10 +2782,10 @@ class Event(object):
 		self.npix = len(self.sel)
 
 
-def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
-   lib = CDLL("demux.so")
-   lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
-   lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
+# def demux(infile, outfile, mStart, mChLen, mNCh, mChOff, mChSpl, frameSize):
+#    lib = CDLL("demux.so")
+#    lib.demux.argtypes = [c_char_p, c_char_p, c_ulong, c_double, c_ulong, c_ulong, c_ulong, c_double]
+#    lib.demux(c_char_p(infile), c_char_p(outfile), c_ulong(mStart), c_double(mChLen), c_ulong(mNCh), c_ulong(mChOff), c_ulong(mChSpl), c_double(frameSize))
 
 def smooth(infile, outfile, l, k, M):
    # apply trapezoidal filter with 'rough parameters' to smooth the dataset so we can search for peaks.
