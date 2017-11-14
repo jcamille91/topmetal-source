@@ -19,13 +19,16 @@
 import util as u
 a = u.Sensor()
 a.load_pixels()
-# a.read_peaks('7_7_17.pkl')
+a.read_peaks('7_7_17.pkl')
 
+# for same bins for both histograms
+# a.analyze(read=1, simple=0, M_def=20.0, l = 20, k = 10)
+# a.label_events(rms_npt=50)
+# a.vsum_select(v_window = (0,0), show_alpha=True, show_zero=True, \
+# show_events = True, nbins=[120,120], hist_lr=[(-10, 110), (-10,110)])
 
 a.analyze(read=1, simple=0, M_def=20.0, l = 20, k = 10)
 a.label_events(rms_npt=50)
 a.vsum_select(v_window = (0,0), show_alpha=True, show_zero=True, \
-show_events = True, nbins=[120,120], hist_lr=[(-10, 110), (-10,110)])
-
-
+show_events = False, nbins=[10,80], hist_lr=[(0, 300), (-4,4)])
 

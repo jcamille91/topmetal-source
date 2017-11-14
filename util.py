@@ -361,6 +361,16 @@ class Sensor(object):
 		# M_loc = np.array([5000])
 		# M_a = np.array([0.015])
 
+		if choose == 'delta' :
+
+			amplitude = 0.015
+
+			delta = np.zeros(self.daq_length, dtype=np.float64)
+
+			delta[int(self.daq_length/2)] = amplitude
+
+			signal = delta + noise
+
 		if choose == 'exp' :
 
 			# specify M=tau, peak location, amplitude, and the number of points to define the peak.
@@ -846,6 +856,49 @@ class Sensor(object):
 
 
 		]
+
+		self.alpha_events3 = [
+
+		# it's possible events in the top left corner have too many negative values
+		# because their inline with the collimator.
+
+		Event(x=20, y=30, r=20, i=3520, shape='c'), #
+		Event(x=20, y=20, r=20, i=6510, shape='c'), #
+		Event(x=45, y=31, r=20, i=6580, shape='c'), #
+		Event(x=20, y=30, r=20, i=6845, shape='c'), #
+		Event(x=20, y=45, r=20, i=7020, shape='c'), #
+		Event(x=25, y=46, r=20, i=7505, shape='c'), #
+		Event(x=20, y=45, r=20, i=7020, shape='c'), #
+		Event(x=23, y=20, r=20, i=7865, shape='c'), #
+		Event(x=20, y=20, r=20, i=8510, shape='c'), #
+		Event(x=43, y=29, r=20, i=8910, shape='c'), #
+		Event(x=28, y=20, r=20, i=9095, shape='c'), #
+
+		Event(x=36, y=29, r=20, i=10610, shape='c'),
+		Event(x=32, y=20, r=20, i=10910, shape='c'), #
+		Event(x=39, y=20, r=20, i=11030, shape='c'), # lopsided but focused, rectangle is better here
+		Event(x=42, y=20, r=20, i=12460, shape='c'), #
+		Event(x=22, y=48, r=20, i=12850, shape='c'), #
+		Event(x=20, y=28, r=20, i=13060, shape='c'), #
+		Event(x=20, y=28, r=20, i=13695, shape='c'), # this one isn't very isolated
+		Event(x=20, y=20, r=20, i=14425, shape='c'), # elliptical and focused
+		Event(x=28, y=20, r=20, i=15140, shape='c'), #
+		Event(x=18, y=23, r=20, i=15475, shape='c'), #
+		Event(x=40, y=42, r=20, i=16825, shape='c'), # lots of dark pixels here
+		Event(x=26, y=42, r=20, i=16595, shape='c'),
+		Event(x=40, y=20, r=20, i=18345, shape='c'), # nice circle
+		Event(x=42, y=30, r=20, i=18755, shape='c'), # nice circle but not isolated
+		Event(x=40, y=30, r=20, i=20550, shape='c'),
+		Event(x=40, y=52, r=20, i=21830, shape='c'), # small ellipse
+		Event(x=20, y=20, r=20, i=22270, shape='c'), # starts circular becomes elliptical
+		Event(x=40, y=35, r=20, i=22675, shape='c'), # big messy circle
+		Event(x=20, y=20, r=20, i=23060, shape='c'), # elliptical blip
+		Event(x=31, y=20, r=20, i=23700, shape='c'),
+		Event(x=20, y=29, r=20, i=24940, shape='c')
+
+
+
+		]
 		# specify a range of quiet frames (no significant signal in these time windows), 
 		# then generate appropriate events.
 
@@ -1022,7 +1075,9 @@ class Sensor(object):
 			# for each pixel, calculate the variance over specified number of frames.
 			for i in r.sel :	
 				# calculate the variance of the relevant slice (quiet point in the dataset)
+				# var += np.var(self.pix[i].filt[r.i:r.i+self.rms_npt])
 				var += np.var(self.pix[i].data[r.i:r.i+self.rms_npt])
+
 			# this is the aggregate RMS of 'Event.npix' many channels. they'll be placed in a list
 			rms = np.sqrt(var)
 			if rms > threshold :
@@ -1051,7 +1106,7 @@ class Sensor(object):
 		# figg.show() 
 		input('press enter to finish')
 
-	def vsum_select(self, show_alpha=True, show_zero=True, show_events=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], axis=0):
+	def vsum_select(self, show_alpha=True, show_zero=True, show_events=False, nfake=100, v_window=(0,0), hist_lr=[(0, 300), (-100,100)], nbins=[20,20], plt_ticks=8, axis=0):
 
 		'''
 		This function makes takes selections of pixels within circles, or other shapes,
@@ -1082,7 +1137,7 @@ class Sensor(object):
 			# get location for every event. get selection of pixels based on this location for 
 			# each event. store the voltage summation for histogram.
 
-			for ev in self.alpha_events2 :
+			for ev in self.alpha_events3 :
 				
 				# retrieve a list of pixels defining the region of interest for this event.
 				ev.retrieve_selection()
@@ -1177,8 +1232,8 @@ class Sensor(object):
 				ax1.text(0.3, 0.05, 'vsum = all selection pixels over frames', transform=ax1.transAxes, fontsize=11,
 					verticalalignment='center')
 				
-				ax1.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
-				ax1s.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
+				ax1.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=plt_ticks))
+				ax1s.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=plt_ticks))
 
 				ax1.grid(True)
 				fig1.show()
@@ -1228,13 +1283,13 @@ class Sensor(object):
 
 
 				# reset number of ticks at the very end.
-				ax2s.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
-				ax2.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=7))
+				ax2s.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=plt_ticks))
+				ax2.get_xaxis().set_major_locator(ticker.LinearLocator(numticks=plt_ticks))
 				ax2.grid(True)
 				fig2.show()		
 
-				# figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
-				# figg.show() 
+				figg, axg = self.fit_gaussian(np.delete(bins2,-1), val2)
+				figg.show() 
 
 			
 
@@ -1272,7 +1327,7 @@ class Sensor(object):
 
 		#		p[0]  p[1] p[2]  p[3]
 		#		A,    mu, sigma, off 
-		init  = [30, -2.7, 1, 0]
+		init  = [30, -1.5, 0.5, 0]
 		out   = leastsq( errfunc, init, args=(x, y))
 		
 		c = out[0]
@@ -1452,7 +1507,7 @@ class Sensor(object):
 		time as 5184 pixel array.
 		
 		input:
-		-sample : desired point in sample space to plot 0-25889
+		-sample : desired point in sample space to plot [0, (self.daq_length-1)]
 		-values : input pixels to show. useful to check that a selection was created properly.
 		-vmin , vmax : minimum and maximum values for the colormap.
 		-axis: supply an axis to impose this pixel plot to that axis.

@@ -13,7 +13,7 @@ a.analyze(read=0, simple=1, select=[],
     bounds = ([0.0, 1.0/300, 0-0.01], [0.03, 1.0, 0+0.01]),	   			   	# format: (min/max)
     guess = [0.008, 1.0/20, 0],						   				 		    # amplitude, 1/tau, offset
     
-    l = 60, k = 20, M_def = float(20), shaper_offset = -20)					# trapezoidal filter
+    l = 20, k = 10, M_def = float(20), shaper_offset = -20)					# trapezoidal filter
 
 
 
